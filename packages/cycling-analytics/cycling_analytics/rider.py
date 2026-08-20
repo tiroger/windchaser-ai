@@ -95,19 +95,36 @@ class RiderModel:
     forces a steady effort where a flat allows coasting, drafting, and simply
     not committing to a segment that happens to fall inside a longer ride.
 
-    Duration alone therefore cannot carry a model between a climb and a flat,
-    which is precisely what transferring to an unridden segment demands.
+    The gradient term is behavioural, not physical: gravity is already in the
+    physics. That makes it a description of this rider on the gradients they
+    have actually ridden, so it is clamped to that range rather than continued
+    past it. Unclamped it is linear and unbounded, and on a segment half again
+    as steep as anything in the history it claimed 233 W for a forty minute
+    climb from a rider whose measured median is 197 W for thirty-one -- more
+    power for a longer, steeper effort than they hold for a shorter, shallower
+    one, which is not a large error so much as an incoherent one.
+
+    A demonstrated-power ceiling was tried alongside the clamp and removed. It
+    guards the same failure, but held-out segments cost 34 seconds of mean
+    error against the clamp's 0.7, because removing a segment from training also
+    removes it from the record of what the rider has done, and the model is then
+    bound by a ceiling that segment itself established.
     """
 
     cp_w: float
     w_prime_j: float
     grade_w: float
     sample_count: int
+    grade_min: float = 0.0
+    grade_max: float = 0.0
 
     def power_at(self, duration_s: float, grade: float = 0.0) -> float:
-        if duration_s <= 0:
-            return self.cp_w + self.grade_w * grade
-        return self.cp_w + self.w_prime_j / duration_s + self.grade_w * grade
+        # Clamped, not extrapolated.
+        bounded = min(max(grade, self.grade_min), self.grade_max)
+        power = self.cp_w + self.grade_w * bounded
+        if duration_s > 0:
+            power += self.w_prime_j / duration_s
+        return power
 
 
 def _solve(rows: list[list[float]], targets: list[float]) -> list[float] | None:
@@ -180,11 +197,17 @@ def fit_rider_model(samples: list[tuple[float, float, float]]) -> RiderModel | N
     # Clamping degrades the curve to a sustainable power plus a gradient term,
     # which is the right behaviour when the durations on offer are too alike to
     # separate the two.
+    cp = max(cp, 1.0)
+    w_prime = max(w_prime, 0.0)
+    grades = [g for _, g, _ in usable]
+
     return RiderModel(
-        cp_w=max(cp, 1.0),
-        w_prime_j=max(w_prime, 0.0),
+        cp_w=cp,
+        w_prime_j=w_prime,
         grade_w=grade_w,
         sample_count=len(usable),
+        grade_min=min(grades),
+        grade_max=max(grades),
     )
 
 

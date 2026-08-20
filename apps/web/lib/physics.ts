@@ -281,7 +281,13 @@ export function calibratedPower(
     // error moves power by about a watt. Backtested as its own variant in
     // scripts/evaluate_rider_model.py: 83.0s MAE against 83.1s for choosing
     // power per forecast hour.
-    const grade = meanGrade(sections);
+    // Clamped to the gradients this rider has ridden. The term is behavioural,
+    // not physical -- gravity is already in the physics -- so past the range it
+    // was fitted on it describes nothing. See RiderModel.grade_min.
+    const grade = Math.min(
+      Math.max(meanGrade(sections), model.grade_min ?? 0),
+      model.grade_max ?? 0,
+    );
     const powerAt = (seconds: number) =>
       model.cp_w +
       (seconds > 0 ? model.w_prime_j / seconds : 0) +

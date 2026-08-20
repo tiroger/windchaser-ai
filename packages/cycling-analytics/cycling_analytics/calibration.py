@@ -178,6 +178,11 @@ def build_calibration(payload: dict) -> dict:
             "cp_w": round(rider_curve.cp_w, 1),
             "w_prime_j": round(rider_curve.w_prime_j, 0),
             "grade_w": round(rider_curve.grade_w, 1),
+            # The gradient term describes this rider on the gradients they have
+            # ridden. Beyond that range it is an extrapolation of behaviour, so
+            # it is clamped rather than continued.
+            "grade_min": round(rider_curve.grade_min, 5),
+            "grade_max": round(rider_curve.grade_max, 5),
             "mass_kg": round(physics.mass_kg, 2),
             "cda": round(physics.cda, 4),
             "attempt_count": rider_curve.sample_count,

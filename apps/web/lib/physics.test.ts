@@ -245,6 +245,8 @@ const RIDER_MODEL: RiderModel = {
   cp_w: 132.7,
   w_prime_j: 12543,
   grade_w: 1176.3,
+  grade_min: -0.002,
+  grade_max: 0.0586,
   mass_kg: 75.9,
   cda: 0.2587,
 };
@@ -353,4 +355,55 @@ test("fitted mass and frontal area replace the generic assumptions", () => {
 
   const bare = riderFor({ id: 606006 } as Segment);
   assert.equal(bare.mass_kg, DEFAULT_RIDER.mass_kg, "no model means no change");
+});
+
+test("gradient is clamped to what this rider has ridden", () => {
+  const shared = {
+    name: "Steep",
+    source: "discovered" as const,
+    distance_m: 3200,
+    maximum_grade: 0,
+    elevation_low: 10,
+    total_elevation_gain: 0,
+    climb_category: 0,
+    city: null,
+    state: null,
+    effort_count: null,
+    athlete_count: null,
+    star_count: null,
+    pr_elapsed_time: null,
+    pr_date: null,
+    effort_count_personal: null,
+    region_id: "r0",
+    cell_id: "41.00,-73.90",
+    rider_model: RIDER_MODEL,
+  };
+
+  // Two segments of identical length, one at the steepest gradient this rider
+  // has recorded and one far beyond it. A climb that steep is slower, but the
+  // power the model credits must not keep rising with the gradient: past the
+  // fitted range the term describes nothing, and unclamped it awarded a rider
+  // more power over forty minutes than they hold over thirty-one.
+  const climb = (id: number, gradePercent: number) => {
+    const rise = (3200 * gradePercent) / 100;
+    return calibratedPower({
+      ...shared,
+      id,
+      average_grade: gradePercent,
+      elevation_high: 10 + rise,
+      points: Array.from({ length: 60 }, (_, i) => [41 + i * 0.0003, -73.9]) as Array<
+        [number, number]
+      >,
+    } as Segment);
+  };
+
+  const atLimit = climb(606007, 5.86);
+  const wellBeyond = climb(606008, 12);
+
+  // Beyond the limit the only thing that may still move power is duration, and
+  // a steeper climb takes longer, so power may fall but never rise.
+  assert.ok(
+    wellBeyond <= atLimit + 0.5,
+    `12% gave ${wellBeyond.toFixed(0)} W against ${atLimit.toFixed(0)} W at the fitted limit`,
+  );
 });

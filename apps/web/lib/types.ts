@@ -55,6 +55,15 @@ export interface RiderModel {
    * one than the other at equal duration.
    */
   grade_w: number;
+  /**
+   * The gradients this rider actually has recorded efforts on. The term above
+   * is a description of their behaviour within that range and an extrapolation
+   * outside it, so it is clamped here rather than continued: unclamped, a
+   * segment half again as steep as anything in the history was credited with
+   * more power over forty minutes than this rider holds over thirty-one.
+   */
+  grade_min: number;
+  grade_max: number;
   mass_kg: number;
   cda: number;
 }
