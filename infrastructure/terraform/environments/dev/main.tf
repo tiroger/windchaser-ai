@@ -61,3 +61,14 @@ module "strava_ingestion" {
   # Alarms are pointless without somewhere to send them.
   alarm_topic_arn = module.observability.alert_topic_arn
 }
+
+module "web_firewall" {
+  source = "../../modules/web-firewall"
+
+  # Amplify created this Web ACL and attached it to the app. It is adopted
+  # rather than replaced: it was silently blocking Strava's webhook validation
+  # and the briefing payload, and an undeclared security control is exactly the
+  # kind of thing section 15 says must be imported rather than left implicit.
+  web_acl_name = "CreatedByAmplify-d3f0frh0dwcdg7-f2d8f3a8-5639-4758-b8e8-3bfa6775d748"
+  metric_name  = "Amplify-d3f0frh0dwcdg7"
+}
