@@ -36,7 +36,13 @@ interface Particle {
   weight: number;
 }
 
-const BASE_COUNT = 340;
+/**
+ * Particles per square pixel. Density rather than a fixed count, so a wide map
+ * is not sparser than a narrow one.
+ */
+const DENSITY = 1 / 2400;
+const MIN_PARTICLES = 160;
+const MAX_PARTICLES = 900;
 
 /** Streak colour per theme: a pale blue vanishes on the light basemap. */
 const STREAK = {
@@ -76,6 +82,12 @@ export default function WindCanvas({
     let dpr = 1;
     const particles: Particle[] = [];
 
+    const targetCount = () =>
+      Math.max(
+        MIN_PARTICLES,
+        Math.min(MAX_PARTICLES, Math.round(width * height * DENSITY)),
+      );
+
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
       dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -84,9 +96,20 @@ export default function WindCanvas({
       canvas.width = Math.max(1, Math.floor(width * dpr));
       canvas.height = Math.max(1, Math.floor(height * dpr));
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      // Keep density constant when the map changes size.
+      const want = targetCount();
+      while (particles.length > want) particles.pop();
+      while (particles.length < want) {
+        const p: Particle = { x: 0, y: 0, age: 0, life: 0, weight: 0 };
+        reseed(p);
+        p.age = Math.random() * p.life;
+        particles.push(p);
+      }
     };
 
-    const spawn = (p: Particle) => {
+    /** Reseed anywhere in the field. Keeps coverage uniform. */
+    const reseed = (p: Particle) => {
       p.x = Math.random() * width;
       p.y = Math.random() * height;
       p.age = 0;
@@ -94,13 +117,20 @@ export default function WindCanvas({
       p.weight = 0.35 + Math.random() * 0.65;
     };
 
+    /**
+     * Re-enter from the upwind edge, at a random offset along the perpendicular
+     * axis. Only for particles that actually left the field: sending aged-out
+     * particles here too is what previously collapsed the whole field into a
+     * band against one edge, because nothing lives long enough to cross.
+     */
+    const reenterUpwind = (p: Particle, vx: number, vy: number) => {
+      reseed(p);
+      if (Math.abs(vx) > Math.abs(vy)) p.x = vx > 0 ? -20 : width + 20;
+      else p.y = vy > 0 ? -20 : height + 20;
+    };
+
+    // resize() seeds the field to the right density for the current size.
     resize();
-    for (let i = 0; i < BASE_COUNT; i++) {
-      const p: Particle = { x: 0, y: 0, age: 0, life: 0, weight: 0 };
-      spawn(p);
-      p.age = Math.random() * p.life;
-      particles.push(p);
-    }
 
     const observer = new ResizeObserver(resize);
     observer.observe(canvas);
@@ -178,15 +208,15 @@ export default function WindCanvas({
         ctx.lineTo(p.x, p.y);
         ctx.stroke();
 
-        if (
-          p.age > p.life ||
-          p.x < -40 || p.x > width + 40 ||
-          p.y < -40 || p.y > height + 40
-        ) {
-          spawn(p);
-          // Re-enter from the upwind edge so the field stays populated.
-          if (Math.abs(vx) > Math.abs(vy)) p.x = vx > 0 ? -20 : width + 20;
-          else p.y = vy > 0 ? -20 : height + 20;
+        const left =
+          p.x < -40 || p.x > width + 40 || p.y < -40 || p.y > height + 40;
+        if (left) {
+          // Gone downwind: bring it back in at the upwind edge so the flow
+          // stays continuous across the boundary.
+          reenterUpwind(p, vx, vy);
+        } else if (p.age > p.life) {
+          // Died of age mid-field: put it back anywhere, so coverage stays even.
+          reseed(p);
         }
       }
       raf = requestAnimationFrame(frame);
