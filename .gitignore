@@ -41,3 +41,15 @@ tmp/
 .idea/
 .vscode/
 
+
+# Rotated Strava refresh token, written by scripts/fetch_strava_fixtures.py
+.strava-refresh-token
+
+# Generated fixture bundle. Contains real segment geometry near home and real PR
+# times. Section 11 of the project plan requires sanitised fixtures and redacted
+# home zones before any public demo, so the raw bundle stays local.
+# Regenerate with: uv run python scripts/fetch_strava_fixtures.py
+apps/web/fixtures/opportunities.json
+
+# Vendored MapLibre worker bundle, synced from node_modules by predev/prebuild.
+apps/web/public/maplibre-gl-*.mjs
