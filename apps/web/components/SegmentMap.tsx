@@ -5,13 +5,14 @@ import {
   LngLatBounds,
   type MapLayerMouseEvent,
   MapLibreMap,
+  type MapMouseEvent,
   Marker,
   NavigationControl,
   Popup,
   setWorkerUrl,
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import WindCanvas from "@/components/WindCanvas";
 import { compassLabel, formatDuration } from "@/lib/geo";
@@ -56,7 +57,8 @@ interface Props {
   segments: Segment[];
   evaluations: Map<number, Evaluation>;
   selectedId: number | null;
-  onSelect: (id: number) => void;
+  /** null clears the selection and returns the map to the whole region. */
+  onSelect: (id: number | null) => void;
   here: LatLon | null;
   wind: { speed: number; fromDeg: number; gust?: number } | null;
   theme: Theme;
@@ -82,6 +84,10 @@ export default function SegmentMap({
   const holder = useRef<HTMLDivElement | null>(null);
   const map = useRef<MapLibreMap | null>(null);
   const ready = useRef(false);
+  // The ref above is read inside callbacks; this mirrors it as state so the
+  // framing effect below re-runs once the layers actually exist. A selection
+  // made before the map finished loading would otherwise never be framed.
+  const [mapReady, setMapReady] = useState(false);
   const onSelectRef = useRef(onSelect);
   useEffect(() => {
     onSelectRef.current = onSelect;
@@ -192,12 +198,21 @@ export default function SegmentMap({
         instance.getCanvas().style.cursor = "";
         popup.remove();
       });
-      instance.on("click", "segments-line", (e: MapLayerMouseEvent) => {
-        const f = e.features?.[0];
-        if (f) onSelectRef.current(Number(f.properties?.id));
+      // One handler for the whole map rather than one bound to the line layer.
+      // The halo is several times wider than the line it surrounds, so hit
+      // testing against the line alone made clicks that plainly landed on a
+      // segment read as clicks on empty map -- which, now that empty map
+      // clears the selection, would have thrown the rider's choice away.
+      instance.on("click", (e: MapMouseEvent) => {
+        const hit = instance.queryRenderedFeatures(e.point, {
+          layers: ["segments-line", "segments-halo"],
+        })[0];
+        const id = hit?.properties?.id;
+        onSelectRef.current(id === undefined ? null : Number(id));
       });
 
       ready.current = true;
+      setMapReady(true);
       // Signals to tests that style and layers are live, and how many segment
       // features the source is actually carrying. The theme toggle replaces the
       // whole style, so this is what proves the layers came back.
@@ -259,6 +274,34 @@ export default function SegmentMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boundsKey]);
 
+  /**
+   * Frame the selected segment.
+   *
+   * A segment is a kilometre or two of road on a map showing a whole riding
+   * region, so selecting one and leaving the camera alone leaves the rider
+   * hunting for what they just picked. Deselecting pulls back out to the
+   * region, because zooming in without a way back is a trap.
+   */
+  const framedSelection = useRef<number | null>(null);
+  useEffect(() => {
+    const instance = map.current;
+    const data = geojsonRef.current;
+    if (!instance || !mapReady || !data) return;
+
+    if (selectedId === null) {
+      // Only pull back out if a segment was actually framed. Otherwise this
+      // fires on first load and on every region change, fighting the refit
+      // that already covers those.
+      if (framedSelection.current !== null) fitTo(instance, data);
+    } else {
+      const feature = data.features.find((f) => f.id === selectedId);
+      // Closer than the regional fit: one segment should fill the frame rather
+      // than sit as a short stroke in the middle of it.
+      if (feature) fitTo(instance, { features: [feature] }, { maxZoom: 15.5 });
+    }
+    framedSelection.current = selectedId;
+  }, [selectedId, mapReady]);
+
   // Rider position marker.
   useEffect(() => {
     const instance = map.current;
@@ -310,14 +353,48 @@ export default function SegmentMap({
           )}
         </div>
         {wind && <Compass fromDeg={wind.fromDeg} />}
+        {selectedId !== null && (
+          <button
+            type="button"
+            className="map-reset"
+            onClick={() => onSelect(null)}
+          >
+            Show all segments
+          </button>
+        )}
       </div>
     </div>
   );
 }
 
+/**
+ * The legend and compass sit over the top-left corner, so geometry framed flush
+ * to the edges disappears underneath them. Each side is clamped to a share of
+ * the container because fitBounds cannot satisfy padding wider than the space
+ * it has to fit into, which a phone-width map reaches easily.
+ */
+function framePadding(instance: MapLibreMap) {
+  const { clientWidth, clientHeight } = instance.getContainer();
+  const cap = (want: number, extent: number) =>
+    Math.max(16, Math.min(want, Math.round(extent * 0.3)));
+  return {
+    top: cap(56, clientHeight),
+    bottom: cap(56, clientHeight),
+    left: cap(200, clientWidth),
+    right: cap(72, clientWidth),
+  };
+}
+
+/** A camera flight is exactly the kind of motion the setting asks us to stop. */
+function frameDuration(): number {
+  if (typeof window === "undefined") return 0;
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 700;
+}
+
 function fitTo(
   instance: MapLibreMap,
   data: { features: Array<{ geometry: { coordinates: number[][] } }> },
+  options: { maxZoom?: number } = {},
 ) {
   const coords = data.features.flatMap((f) => f.geometry.coordinates);
   if (coords.length === 0) return;
@@ -328,7 +405,11 @@ function fitTo(
       coords[0] as [number, number],
     ),
   );
-  instance.fitBounds(bounds, { padding: 70, duration: 600, maxZoom: 14 });
+  instance.fitBounds(bounds, {
+    padding: framePadding(instance),
+    duration: frameDuration(),
+    maxZoom: options.maxZoom ?? 14,
+  });
 }
 
 function Compass({ fromDeg }: { fromDeg: number }) {

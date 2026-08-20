@@ -604,6 +604,33 @@ button {
   align-self: flex-start;
 }
 
+/* Appears only while the map is framed on one segment: the way back out. */
+.map-reset {
+  align-self: flex-start;
+  background: var(--map-tint);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  color: var(--ink-2);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--step--2);
+  padding: 0.4rem 0.7rem;
+  pointer-events: auto;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+
+.map-reset:hover {
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+.map-reset:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* ------------------------------------------------------------- scrubber -- */
 
 .scrubber {
