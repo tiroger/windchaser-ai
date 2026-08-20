@@ -1,5 +1,9 @@
-import { generateBriefing, type BriefingInput } from "@/lib/server/briefing";
-import type { Evaluation, Segment } from "@/lib/types";
+import {
+  generateBriefing,
+  type BriefingEvaluation,
+  type BriefingInput,
+  type BriefingSegment,
+} from "@/lib/server/briefing";
 
 export const dynamic = "force-dynamic";
 
@@ -8,7 +12,11 @@ interface Payload {
   athleteName: string | null;
   timezone: string;
   blockedCount: number;
-  ranked: Array<{ segment: Segment; evaluation: Evaluation; whenIso: string }>;
+  ranked: Array<{
+    segment: BriefingSegment;
+    evaluation: BriefingEvaluation;
+    whenIso: string;
+  }>;
 }
 
 export async function POST(request: Request) {

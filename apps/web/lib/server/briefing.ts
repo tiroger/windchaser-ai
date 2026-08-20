@@ -3,8 +3,36 @@ import "server-only";
 import { createHash } from "node:crypto";
 
 import { compassLabel, formatDelta, formatDuration } from "../geo";
-import type { Evaluation, Segment } from "../types";
 import { readEnv } from "./env";
+
+/**
+ * The briefing reads facts, not geometry. Sending whole segments meant posting
+ * 240-point polylines and elevation profiles to a text endpoint that never
+ * looks at them, and Amplify's compute rejects a POST body over roughly 6 KB
+ * at the edge, before any of this runs. These are exactly the fields used.
+ */
+export interface BriefingSegment {
+  id: number;
+  name: string;
+  distance_m: number;
+  average_grade: number;
+  target_time_s: number | null;
+}
+
+export interface BriefingEvaluation {
+  predicted_time_s: number;
+  p_beat: number | null;
+  score: number;
+  effective_tailwind_ms: number;
+  mean_crosswind_ms: number;
+  weather: {
+    wind_speed_ms: number;
+    wind_from_deg: number;
+    gust_ms: number;
+    temperature_c: number;
+    precip_prob: number;
+  };
+}
 
 /**
  * The narrative layer.
@@ -34,7 +62,11 @@ export interface BriefingInput {
   athleteName: string | null;
   now: Date;
   timezone: string;
-  ranked: Array<{ segment: Segment; evaluation: Evaluation; whenIso: string }>;
+  ranked: Array<{
+    segment: BriefingSegment;
+    evaluation: BriefingEvaluation;
+    whenIso: string;
+  }>;
   blockedCount: number;
 }
 
@@ -76,9 +108,9 @@ function describe(r: BriefingInput["ranked"][number]): string {
   const when = new Date(whenIso);
   const day = when.toLocaleDateString("en-US", { weekday: "long" });
   const hour = when.toLocaleTimeString("en-US", { hour: "numeric" });
-  const delta = segment.pr_elapsed_time
-    ? formatDelta(evaluation.predicted_time_s - segment.pr_elapsed_time)
-    : "no PR on record";
+  const delta = segment.target_time_s
+    ? formatDelta(evaluation.predicted_time_s - segment.target_time_s)
+    : "no recorded time to compare against";
   const tail = evaluation.effective_tailwind_ms;
   const assist =
     tail > 0.4 ? `${tail.toFixed(1)} m/s net tailwind`
@@ -89,8 +121,8 @@ function describe(r: BriefingInput["ranked"][number]): string {
     `- ${segment.name} (${(segment.distance_m / 1000).toFixed(1)} km, ` +
       `${segment.average_grade.toFixed(1)}% average grade)`,
     `  best window: ${day} ${hour}`,
-    `  predicted ${formatDuration(evaluation.predicted_time_s)} vs PR ` +
-      `${segment.pr_elapsed_time ? formatDuration(segment.pr_elapsed_time) : "none"} (${delta})`,
+    `  predicted ${formatDuration(evaluation.predicted_time_s)} vs best ` +
+      `${segment.target_time_s ? formatDuration(segment.target_time_s) : "none"} (${delta})`,
     `  chance of beating PR: ${
       evaluation.p_beat === null ? "not applicable" : `${Math.round(evaluation.p_beat * 100)}%`
     }`,
@@ -154,7 +186,7 @@ export function templateBriefing(input: BriefingInput): Briefing {
   const day = when.toLocaleDateString("en-US", { weekday: "long" });
   const hour = when.toLocaleTimeString("en-US", { hour: "numeric" });
   const tail = best.evaluation.effective_tailwind_ms;
-  const pr = best.segment.pr_elapsed_time;
+  const pr = best.segment.target_time_s;
   const chance =
     best.evaluation.p_beat === null
       ? null

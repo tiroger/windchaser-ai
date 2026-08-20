@@ -206,16 +206,47 @@ export default function Page() {
         athleteName: bundle.athlete.firstname,
         timezone,
         blockedCount,
+        // Only the facts the briefing reads. Posting whole segments meant
+        // sending 240-point polylines to a text endpoint, and Amplify rejects a
+        // POST body over roughly 6 KB at the edge, which is why the briefing
+        // silently 403'd in production while working locally.
         ranked: ranked.slice(0, 5).map((r) => ({
-          segment: r.segment,
-          evaluation: r.evaluation,
+          segment: {
+            id: r.segment.id,
+            name: r.segment.name,
+            distance_m: r.segment.distance_m,
+            average_grade: r.segment.average_grade,
+            target_time_s:
+              r.segment.best_moving_time_s ?? r.segment.pr_elapsed_time,
+          },
+          evaluation: {
+            predicted_time_s: r.evaluation.predicted_time_s,
+            p_beat: r.evaluation.p_beat,
+            score: r.evaluation.score,
+            effective_tailwind_ms: r.evaluation.effective_tailwind_ms,
+            mean_crosswind_ms: r.evaluation.mean_crosswind_ms,
+            weather: {
+              wind_speed_ms: r.evaluation.weather.wind_speed_ms,
+              wind_from_deg: r.evaluation.weather.wind_from_deg,
+              gust_ms: r.evaluation.weather.gust_ms,
+              temperature_c: r.evaluation.weather.temperature_c,
+              precip_prob: r.evaluation.weather.precip_prob,
+            },
+          },
           whenIso: r.whenIso,
         })),
       }),
     })
-      .then((r) => r.json())
-      .then((b: Briefing) => setBriefing(b))
-      .catch(() => setBriefing(null))
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`briefing failed with ${r.status}`);
+        return (await r.json()) as Briefing;
+      })
+      .then((b) => setBriefing(b))
+      .catch((e) => {
+        // Silent failure here is what made a 403 look like a missing feature.
+        console.error("[briefing]", e);
+        setBriefing(null);
+      })
       .finally(() => setBriefingLoading(false));
   }, [briefingKey, bundle, ranked, regionName, timezone, blockedCount]);
 
