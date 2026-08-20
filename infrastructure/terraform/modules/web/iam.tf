@@ -1,7 +1,12 @@
-# Compute role for the server-side rendered app.
+# Two roles, because Amplify has two distinct identities and conflating them
+# grants the build far more than it needs.
 #
-# This is what the API routes run as, so it is the identity that reaches
-# Secrets Manager and, later, Bedrock. Scoped to exactly that.
+#   iam_service_role_arn  build and deploy
+#   compute_role_arn      the SSR runtime, where API routes execute
+#
+# Only the second reaches Secrets Manager. Setting only the first is why the
+# runtime reported "Could not load credentials from any providers": it had no
+# identity at all.
 
 data "aws_iam_policy_document" "amplify_assume" {
   statement {
@@ -21,8 +26,15 @@ resource "aws_iam_role" "amplify" {
   assume_role_policy = data.aws_iam_policy_document.amplify_assume.json
 }
 
-resource "aws_iam_role_policy_attachment" "read_strava_secret" {
-  role       = aws_iam_role.amplify.name
+# The SSR runtime. This is the only identity that may read the credentials.
+resource "aws_iam_role" "compute" {
+  name               = "windchaser-${var.environment}-amplify-compute"
+  description        = "SSR compute role for the WindChaser web app."
+  assume_role_policy = data.aws_iam_policy_document.amplify_assume.json
+}
+
+resource "aws_iam_role_policy_attachment" "compute_read_strava_secret" {
+  role       = aws_iam_role.compute.name
   policy_arn = aws_iam_policy.read_strava_secret.arn
 }
 

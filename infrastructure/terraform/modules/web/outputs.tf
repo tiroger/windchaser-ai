@@ -33,7 +33,12 @@ output "strava_secret_name" {
   value       = aws_secretsmanager_secret.strava.name
 }
 
-output "runtime_role_arn" {
-  description = "Role the server-side app runs as."
+output "build_role_arn" {
+  description = "Role Amplify uses to build and deploy."
   value       = aws_iam_role.amplify.arn
+}
+
+output "runtime_role_arn" {
+  description = "Role the SSR compute functions run as."
+  value       = aws_iam_role.compute.arn
 }

@@ -29,6 +29,11 @@ resource "aws_amplify_app" "web" {
 
   iam_service_role_arn = aws_iam_role.amplify.arn
 
+  # Separate from the build role above. Amplify grants this one to the SSR
+  # compute functions, and without it the runtime has no AWS identity, so any
+  # SDK call fails with "Could not load credentials from any providers".
+  compute_role_arn = aws_iam_role.compute.arn
+
   # No build_spec here. amplify.yml at the repository root takes precedence and
   # is reviewable alongside the code it builds. Terraform emitting the same YAML
   # with quoted keys was parsed only partially by Amplify, which ran the build
