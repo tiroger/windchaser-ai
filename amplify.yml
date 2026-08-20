@@ -27,7 +27,7 @@ applications:
             # server route see them at request time.
             # The || true matters: grep exits non-zero when nothing matches, and
             # a missing optional variable must not fail the build.
-            - env | grep -E '^(STRAVA_SECRET_ARN|LIVE_AI_ENABLED)=' >> .env.production || true
+            - env | grep -E '^(STRAVA_SECRET_ARN|LIVE_AI_ENABLED|APP_DATA_BUCKET|CALIBRATION_S3_KEY|WINDCHASER_BRIEFING_MODEL)=' >> .env.production || true
             # prebuild syncs the MapLibre worker into public/, without which the
             # map renders an empty canvas.
             - npm run build

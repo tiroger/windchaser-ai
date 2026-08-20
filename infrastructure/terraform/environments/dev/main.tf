@@ -38,4 +38,10 @@ module "web" {
   # Connected through the console on 2026-08-20. Terraform now owns the branch
   # and reasserts the compute platform the console reset.
   repository_connected = true
+
+  # Turns on the generated briefing. Off means the deterministic template, which
+  # is the ADR-0002 fallback and stays correct either way. Generation is cached
+  # by evidence hash, so this costs a handful of calls a day rather than one per
+  # page view, and the tag-filtered budget and anomaly monitor watch it.
+  enable_bedrock = true
 }

@@ -65,3 +65,27 @@ variable "repository_connected" {
   type        = bool
   default     = false
 }
+
+variable "enable_bedrock" {
+  description = <<-EOT
+    Grant the runtime permission to invoke Bedrock, and turn the briefing's
+    LIVE_AI_ENABLED switch on.
+
+    Off by default so inference spend is always a deliberate act. Turning it off
+    again returns briefings to the deterministic template with no other effect,
+    which is the degradation ADR-0002 requires.
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "briefing_model" {
+  description = <<-EOT
+    Bedrock model backing the briefing. COST_STRATEGY.md suggests routing simple
+    summarisation to a smaller model once evaluations confirm quality; the
+    briefing is cached by evidence hash, so it generates a handful of times a
+    day rather than per page view.
+  EOT
+  type        = string
+  default     = "claude-opus-5"
+}
