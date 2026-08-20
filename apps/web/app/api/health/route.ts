@@ -42,7 +42,7 @@ export async function GET() {
     };
   }
 
-  const table = await calibrationTable();
+  const { segments: table, rider } = await calibrationTable();
   const fitted = Object.values(table).filter((e) => e.power_w).length;
 
   return Response.json(
@@ -53,6 +53,17 @@ export async function GET() {
       calibration: {
         segments: Object.keys(table).length,
         with_fitted_power: fitted,
+        // Everything else falls back to this, so its absence is the difference
+        // between honest probabilities and optimistic ones.
+        rider_model: rider
+          ? {
+              cp_w: rider.cp_w,
+              w_prime_j: rider.w_prime_j,
+              grade_w: rider.grade_w,
+              mass_kg: rider.mass_kg,
+              cda: rider.cda,
+            }
+          : null,
       },
       // Null until this container has made a Strava call.
       strava_quota: rateLimitState(),

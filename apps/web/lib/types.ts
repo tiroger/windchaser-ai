@@ -30,6 +30,33 @@ export interface Segment {
   best_moving_time_s?: number | null;
   /** Real gradient profile, so grade varies along the segment. */
   elevation_profile?: ElevationProfile | null;
+  /** Rider-level model, used when this segment has no fit of its own. */
+  rider_model?: RiderModel | null;
+}
+
+/**
+ * What this rider can hold, learned across every recorded attempt rather than
+ * per segment, so it applies to segments they have never ridden.
+ *
+ * Mass and frontal area are fitted too. They are assumed constants elsewhere,
+ * and getting them wrong is invisible in a per-segment fit -- the error is
+ * absorbed into that segment's power -- but fatal to a model meant to carry
+ * between a climb and a flat, where the two constants dominate in turn.
+ */
+export interface RiderModel {
+  /** Power available for an effort of unbounded length. */
+  cp_w: number;
+  /** Finite work available above it, spent over the effort's duration. */
+  w_prime_j: number;
+  /**
+   * Extra power per unit of gradient. Behavioural, not physical: gravity is
+   * already in the physics. A climb compels a steady effort where a flat
+   * allows coasting and drafting, and this rider holds roughly 35 W more on
+   * one than the other at equal duration.
+   */
+  grade_w: number;
+  mass_kg: number;
+  cda: number;
 }
 
 export interface ElevationProfile {

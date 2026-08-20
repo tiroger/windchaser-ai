@@ -206,30 +206,52 @@ const RHO_REFERENCE = 1.225;
 const powerCache = new Map<number, number>();
 
 /**
- * Fit sustainable power to the rider's own PR on this segment, per section 9
- * ("baseline physics model calibrated against historical efforts").
+ * Mass and frontal area for this rider, fitted rather than assumed, when the
+ * calibration carries them.
  *
- * Without this the model compares the rider against a generic 250 W athlete,
- * and every probability collapses to 0% or 100%. Calibrating makes the still-air
- * prediction equal the PR by construction, so the wind term is what actually
- * moves the estimate and the probability becomes meaningful.
+ * These are constants everywhere else in the model, and the defaults are a
+ * generic 80 kg rider at 0.32 m2. Fitting them against efforts where power was
+ * measured put this rider at 75.9 kg and 0.259, which is the difference between
+ * predicting a flat segment 15% slow and predicting it right.
+ */
+export function riderFor(
+  segment: Segment,
+  base: Rider = DEFAULT_RIDER,
+): Rider {
+  const model = segment.rider_model;
+  if (!model) return base;
+  return { ...base, mass_kg: model.mass_kg, cda: model.cda };
+}
+
+/** Distance-weighted gradient, the quantity the rider curve was fitted on. */
+function meanGrade(sections: ReturnType<typeof sectionsFor>): number {
+  const total = sections.reduce((acc, s) => acc + s.distance_m, 0);
+  if (total <= 0) return 0;
+  return sections.reduce((acc, s) => acc + s.grade * s.distance_m, 0) / total;
+}
+
+/**
+ * Sustainable power for this segment, from the best source available.
  *
- * The conditions during the PR are unknown, so still air at reference density is
- * the neutral baseline. That folds any wind help the rider had that day into the
- * fitted power, which is a known bias and a reason to prefer many efforts over
- * one once effort history is available.
+ * Three, in descending order of evidence: a fit across this segment's own
+ * recorded attempts in their real weather; the rider-level model, which was
+ * learned across every segment and so applies to ones never ridden; and
+ * failing both, this rider's record here assumed to have been set in still air.
+ *
+ * The order matters more than it looks. Roughly two thirds of what the app
+ * shows has no attempt history, and before the rider model those all took the
+ * last branch -- which backtests 96 seconds optimistic, feeding a probability
+ * of beating a personal best that was confident exactly where it was least
+ * calibrated.
  */
 export function calibratedPower(
   segment: Segment,
   rider: Rider = DEFAULT_RIDER,
 ): number {
-  // Fitted across many attempts in their real weather when available. Backtests
-  // roughly halve prediction error against the single-PR fallback below, and
-  // remove an 81 second optimism bias. See scripts/evaluate_calibration.py.
+  // Fitted across many attempts on this segment in their real weather. Best
+  // available, and roughly half the error of anything below.
+  // See scripts/evaluate_calibration.py.
   if (segment.calibrated_power_w) return segment.calibrated_power_w;
-
-  const pr = segment.best_moving_time_s ?? segment.pr_elapsed_time;
-  if (!pr || pr <= 0) return rider.power_w;
 
   const cached = powerCache.get(segment.id);
   if (cached !== undefined) return cached;
@@ -237,14 +259,54 @@ export function calibratedPower(
   const sections = sectionsFor(segment);
   if (sections.length === 0) return rider.power_w;
 
+  const fitted = riderFor(segment, rider);
   const timeAt = (power: number) =>
     sections.reduce(
       (acc, s) =>
         acc +
         s.distance_m /
-          sectionSpeed({ ...rider, power_w: power }, 0, s.grade, RHO_REFERENCE),
+          sectionSpeed({ ...fitted, power_w: power }, 0, s.grade, RHO_REFERENCE),
       0,
     );
+
+  const model = segment.rider_model;
+  if (model) {
+    // Power depends on how long the effort lasts, and the duration depends on
+    // the power, so this is a fixed point. It converges quickly because a
+    // longer estimate lowers the power, which lengthens it again by less each
+    // round.
+    //
+    // Still air, deliberately. Power is resolved once per segment and cached
+    // with no forecast in hand, and W' is small enough that a 10% duration
+    // error moves power by about a watt. Backtested as its own variant in
+    // scripts/evaluate_rider_model.py: 83.0s MAE against 83.1s for choosing
+    // power per forecast hour.
+    const grade = meanGrade(sections);
+    const powerAt = (seconds: number) =>
+      model.cp_w +
+      (seconds > 0 ? model.w_prime_j / seconds : 0) +
+      model.grade_w * grade;
+
+    let seconds = timeAt(powerAt(3600));
+    for (let i = 0; i < 12; i++) {
+      const next = timeAt(powerAt(seconds));
+      if (Math.abs(next - seconds) < 0.25) {
+        seconds = next;
+        break;
+      }
+      seconds = next;
+    }
+    const power = powerAt(seconds);
+    powerCache.set(segment.id, power);
+    return power;
+  }
+
+  // Nothing learned about this rider at all. Fitting power to their record on
+  // this segment assumes it was set in still air, which folds whatever wind
+  // helped that day into their legs: backtested at 98s MAE with a 96 second
+  // optimistic bias, against the rider model's 83s and 3s.
+  const pr = segment.best_moving_time_s ?? segment.pr_elapsed_time;
+  if (!pr || pr <= 0) return rider.power_w;
 
   // Time decreases monotonically with power.
   let lo = 40;
@@ -254,9 +316,9 @@ export function calibratedPower(
     if (timeAt(mid) > pr) lo = mid;
     else hi = mid;
   }
-  const fitted = (lo + hi) / 2;
-  powerCache.set(segment.id, fitted);
-  return fitted;
+  const power = (lo + hi) / 2;
+  powerCache.set(segment.id, power);
+  return power;
 }
 
 export function evaluate(
@@ -266,7 +328,7 @@ export function evaluate(
   baseRider: Rider = DEFAULT_RIDER,
 ): Evaluation {
   const rider: Rider = {
-    ...baseRider,
+    ...riderFor(segment, baseRider),
     power_w: calibratedPower(segment, baseRider),
   };
   const w = hourFromCell(cell, hourIndex);

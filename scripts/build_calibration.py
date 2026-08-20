@@ -26,8 +26,14 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "packages" / "cycling-analytics"))
 
 from cycling_analytics.physics import (  # noqa: E402
+    Rider,
     fit_power_from_efforts,
     to_sections,
+)
+from cycling_analytics.rider import (  # noqa: E402
+    fit_physics,
+    fit_rider_model,
+    mean_grade,
 )
 
 DATA = REPO / "data" / "training" / "efforts.json"
@@ -80,6 +86,35 @@ def main() -> None:
     for e in payload["efforts"]:
         by_segment[str(e["segment_id"])].append(e)
 
+    # Mass and frontal area first, fitted from the efforts where power was
+    # measured. Everything below depends on them: a per-segment power fitted
+    # against the wrong constants absorbs their error, which is invisible until
+    # the model is asked about a segment it has never seen.
+    observations = []
+    curve_samples = []
+    for sid, efforts in by_segment.items():
+        seg = segments.get(sid)
+        if not seg:
+            continue
+        attempts = attempts_only(efforts)
+        if len(attempts) < MIN_ATTEMPTS:
+            continue
+        sections = to_sections(
+            seg["points"], seg["average_grade"], seg.get("elevation_profile")
+        )
+        if not sections:
+            continue
+        grade = mean_grade(sections)
+        for e in attempts:
+            actual = float(e.get("moving_time_s") or e["elapsed_time_s"])
+            watts = float(e["average_watts"])
+            observations.append((sections, e["weather"], watts, actual))
+            curve_samples.append((actual, grade, watts))
+
+    physics = fit_physics(observations)
+    rider_curve = fit_rider_model(curve_samples)
+    base = physics.rider(0.0) if physics else Rider()
+
     out: dict[str, dict] = {}
     skipped: list[str] = []
 
@@ -120,7 +155,7 @@ def main() -> None:
         )
         if not sections:
             continue
-        power = fit_power_from_efforts(sections, attempts)
+        power = fit_power_from_efforts(sections, attempts, base)
         measured = [e["average_watts"] for e in attempts]
 
         out[sid] = {
@@ -146,6 +181,20 @@ def main() -> None:
         "min_attempts": MIN_ATTEMPTS,
         "segments": out,
     }
+
+    # The rider-level model, which is what every segment without its own fit
+    # falls back to. Backtested by holding out whole segments in
+    # scripts/evaluate_rider_model.py: MAE 83s against the single-record
+    # fallback's 98s, and bias -3s against its -96s.
+    if physics and rider_curve:
+        bundle["rider"] = {
+            "cp_w": round(rider_curve.cp_w, 1),
+            "w_prime_j": round(rider_curve.w_prime_j, 0),
+            "grade_w": round(rider_curve.grade_w, 1),
+            "mass_kg": round(physics.mass_kg, 2),
+            "cda": round(physics.cda, 4),
+            "attempt_count": rider_curve.sample_count,
+        }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(bundle, indent=1))
 
@@ -154,6 +203,14 @@ def main() -> None:
         f"  {len(fitted)} segments with fitted power, "
         f"{len(out)} with an elevation profile"
     )
+    if physics and rider_curve:
+        r = bundle["rider"]
+        print(
+            f"  rider model: CP {r['cp_w']:.0f} W, W' {r['w_prime_j']/1000:.1f} kJ, "
+            f"{r['grade_w']:+.0f} W per unit grade\n"
+            f"               mass {r['mass_kg']:.1f} kg, CdA {r['cda']:.3f}, "
+            f"from {r['attempt_count']} attempts"
+        )
     if fitted:
         print(
             f"\n  {'segment':<34}{'fitted W':>9}{'meas':>6}{'best moving':>13}"

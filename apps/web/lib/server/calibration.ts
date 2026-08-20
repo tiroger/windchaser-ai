@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
-import type { Bundle, Segment } from "../types";
+import type { Bundle, RiderModel, Segment } from "../types";
 
 /**
  * Per-segment calibration: power fitted across recorded attempts in their real
@@ -32,20 +32,34 @@ export interface CalibrationEntry {
 
 type Table = Record<string, CalibrationEntry>;
 
-let cached: Table | null = null;
-let inFlight: Promise<Table> | null = null;
+/** The per-segment table plus the rider-level model that backs everything else. */
+interface Calibration {
+  segments: Table;
+  rider: RiderModel | null;
+}
 
-function fromDisk(): Table | null {
+let cached: Calibration | null = null;
+let inFlight: Promise<Calibration> | null = null;
+
+function parse(text: string): Calibration | null {
+  const parsed = JSON.parse(text) as {
+    segments?: Table;
+    rider?: RiderModel | null;
+  };
+  if (!parsed.segments) return null;
+  return { segments: parsed.segments, rider: parsed.rider ?? null };
+}
+
+function fromDisk(): Calibration | null {
   try {
     const path = join(process.cwd(), "fixtures", "calibration.json");
-    const parsed = JSON.parse(readFileSync(path, "utf8")) as { segments: Table };
-    return parsed.segments ?? null;
+    return parse(readFileSync(path, "utf8"));
   } catch {
     return null;
   }
 }
 
-async function fromS3(): Promise<Table | null> {
+async function fromS3(): Promise<Calibration | null> {
   const bucket = process.env.APP_DATA_BUCKET;
   const key = process.env.CALIBRATION_S3_KEY;
   if (!bucket || !key) return null;
@@ -57,8 +71,7 @@ async function fromS3(): Promise<Table | null> {
     );
     const body = await result.Body?.transformToString();
     if (!body) return null;
-    const parsed = JSON.parse(body) as { segments: Table };
-    return parsed.segments ?? null;
+    return parse(body);
   } catch (error) {
     // Missing calibration degrades accuracy; it must not fail a request.
     console.error(
@@ -69,14 +82,14 @@ async function fromS3(): Promise<Table | null> {
   }
 }
 
-async function load(): Promise<Table> {
+async function load(): Promise<Calibration> {
   // The working copy wins, so a local run uses freshly generated calibration
   // without needing to upload it first.
-  return fromDisk() ?? (await fromS3()) ?? {};
+  return fromDisk() ?? (await fromS3()) ?? { segments: {}, rider: null };
 }
 
 /** Resolved once per container, coalescing concurrent callers. */
-export async function calibrationTable(): Promise<Table> {
+export async function calibrationTable(): Promise<Calibration> {
   if (cached) return cached;
   if (!inFlight) {
     inFlight = load().then((table) => {
@@ -88,11 +101,19 @@ export async function calibrationTable(): Promise<Table> {
   return inFlight;
 }
 
-/** Attach the fit to each segment; those without one keep the PR fallback. */
+/**
+ * Attach the fit to each segment.
+ *
+ * The rider model goes on every segment, including those with no fit of their
+ * own -- they are the reason it exists. Roughly two thirds of what the app
+ * shows has never been ridden enough to calibrate, and those previously fell
+ * back to fitting power from a single record in still air.
+ */
 export async function applyCalibration(segments: Segment[]): Promise<number> {
-  const table = await calibrationTable();
+  const { segments: table, rider } = await calibrationTable();
   let applied = 0;
   for (const seg of segments) {
+    seg.rider_model = rider;
     const entry = table[String(seg.id)];
     if (!entry) continue;
     seg.calibrated_power_w = entry.power_w ?? null;

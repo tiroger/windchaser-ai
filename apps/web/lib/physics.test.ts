@@ -7,11 +7,12 @@ import {
   airDensity,
   calibratedPower,
   normalCdf,
+  riderFor,
   sectionSpeed,
   sectionsFor,
   windAtRiderHeight,
 } from "./physics";
-import type { Rider } from "./types";
+import type { Rider, RiderModel, Segment } from "./types";
 
 // Matches the reference parameters recorded in section 9 of the project plan.
 const FIXTURE_RIDER: Rider = {
@@ -235,4 +236,121 @@ test("calibrated power from history overrides the PR fallback", () => {
   const fitted = calibratedPower({ ...base, id: 515152, calibrated_power_w: 190 });
   assert.equal(fitted, 190, "an explicit fit must win");
   assert.notEqual(fromPr, 190, "the PR fallback should differ from the fit");
+});
+
+// Fitted values from scripts/build_calibration.py, rounded. Used as a shape
+// rather than as ground truth: what is asserted below is the behaviour these
+// numbers must produce, not the numbers themselves.
+const RIDER_MODEL: RiderModel = {
+  cp_w: 132.7,
+  w_prime_j: 12543,
+  grade_w: 1176.3,
+  mass_kg: 75.9,
+  cda: 0.2587,
+};
+
+test("the rider model supplies power for a segment with no history", () => {
+  const base = {
+    name: "Unridden",
+    source: "discovered" as const,
+    distance_m: 3000,
+    average_grade: 0,
+    maximum_grade: 0,
+    elevation_high: 10,
+    elevation_low: 10,
+    total_elevation_gain: 0,
+    climb_category: 0,
+    city: null,
+    state: null,
+    effort_count: null,
+    athlete_count: null,
+    star_count: null,
+    pr_elapsed_time: null,
+    pr_date: null,
+    effort_count_personal: null,
+    points: Array.from({ length: 60 }, (_, i) => [41 + i * 0.0003, -73.9]) as Array<
+      [number, number]
+    >,
+    region_id: "r0",
+    cell_id: "41.00,-73.90",
+  };
+
+  // No record and no fit. Without a rider model there is nothing to go on and
+  // the generic rider's power is returned unchanged.
+  const generic = calibratedPower({ ...base, id: 606001 } as Segment);
+  assert.equal(generic, DEFAULT_RIDER.power_w, "no evidence means no calibration");
+
+  const modelled = calibratedPower({
+    ...base,
+    id: 606002,
+    rider_model: RIDER_MODEL,
+  } as Segment);
+  assert.notEqual(modelled, DEFAULT_RIDER.power_w, "the model must be used");
+
+  // The fixed point has to land between critical power and what the curve
+  // allows over a short effort; outside that range it has not converged.
+  assert.ok(
+    modelled > RIDER_MODEL.cp_w && modelled < RIDER_MODEL.cp_w + 200,
+    `power ${modelled} outside the curve's plausible range`,
+  );
+});
+
+test("the rider curve gives a climb more power than a flat", () => {
+  const shared = {
+    name: "Shaped",
+    source: "discovered" as const,
+    distance_m: 3000,
+    maximum_grade: 0,
+    elevation_low: 10,
+    total_elevation_gain: 0,
+    climb_category: 0,
+    city: null,
+    state: null,
+    effort_count: null,
+    athlete_count: null,
+    star_count: null,
+    pr_elapsed_time: null,
+    pr_date: null,
+    effort_count_personal: null,
+    points: Array.from({ length: 60 }, (_, i) => [41 + i * 0.0003, -73.9]) as Array<
+      [number, number]
+    >,
+    region_id: "r0",
+    cell_id: "41.00,-73.90",
+    rider_model: RIDER_MODEL,
+  };
+
+  const flat = calibratedPower({
+    ...shared,
+    id: 606003,
+    average_grade: 0,
+    elevation_high: 10,
+  } as Segment);
+  const climb = calibratedPower({
+    ...shared,
+    id: 606004,
+    average_grade: 6,
+    elevation_high: 190,
+  } as Segment);
+
+  // The gradient term is behavioural: this rider holds more on a climb than on
+  // a flat of the same duration, and the curve has to reproduce that or it
+  // cannot transfer between the two.
+  assert.ok(
+    climb > flat + 20,
+    `climb ${climb.toFixed(0)} W should exceed flat ${flat.toFixed(0)} W`,
+  );
+});
+
+test("fitted mass and frontal area replace the generic assumptions", () => {
+  const segment = { id: 606005, rider_model: RIDER_MODEL } as Segment;
+  const fitted = riderFor(segment);
+  assert.equal(fitted.mass_kg, RIDER_MODEL.mass_kg);
+  assert.equal(fitted.cda, RIDER_MODEL.cda);
+  // Everything not fitted must survive untouched.
+  assert.equal(fitted.crr, DEFAULT_RIDER.crr);
+  assert.equal(fitted.drivetrain_efficiency, DEFAULT_RIDER.drivetrain_efficiency);
+
+  const bare = riderFor({ id: 606006 } as Segment);
+  assert.equal(bare.mass_kg, DEFAULT_RIDER.mass_kg, "no model means no change");
 });
