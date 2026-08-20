@@ -66,7 +66,6 @@ resource "aws_amplify_app" "web" {
     # The app resolves credentials from here at runtime. The ARN is not secret;
     # reading it requires the compute role.
     STRAVA_SECRET_ARN = aws_secretsmanager_secret.strava.arn
-    AWS_REGION_NAME   = data.aws_region.current.name
     # Bedrock stays off until the briefing is wired to it, so a misconfiguration
     # cannot quietly start spending on inference.
     LIVE_AI_ENABLED = "false"
@@ -82,8 +81,6 @@ resource "aws_amplify_app" "web" {
     ]
   }
 }
-
-data "aws_region" "current" {}
 
 resource "aws_amplify_branch" "tracked" {
   app_id      = aws_amplify_app.web.id

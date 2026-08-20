@@ -86,6 +86,10 @@ data "aws_iam_policy_document" "apply_guardrails" {
       "iam:PassRole",
       "iam:CreatePolicy",
       "iam:DeletePolicy",
+      # The provider's default_tags block tags every resource it creates,
+      # including IAM policies, so tagging is part of creating one.
+      "iam:TagPolicy",
+      "iam:UntagPolicy",
       "iam:GetPolicy",
       "iam:GetPolicyVersion",
       "iam:CreatePolicyVersion",

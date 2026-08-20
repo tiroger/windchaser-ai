@@ -32,7 +32,9 @@ async function load(): Promise<Partial<StravaCredentials>> {
   if (!arn) return {};
 
   const client = new SecretsManagerClient({
-    region: process.env.AWS_REGION_NAME || process.env.AWS_REGION || "us-east-1",
+    // Amplify sets AWS_REGION in the compute runtime. A custom variable is not
+    // an option: Amplify rejects any environment variable starting with "AWS".
+    region: process.env.AWS_REGION || "us-east-1",
   });
 
   try {
