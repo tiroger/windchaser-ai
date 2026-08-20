@@ -23,11 +23,22 @@ from datetime import datetime, timezone
 
 from cycling_analytics.calibration import build_calibration
 
-from . import store, weather
+from . import store, strava, weather
 from .strava import RateLimited, Unavailable, activity
 
 EFFORTS_KEY = os.environ.get("EFFORTS_S3_KEY", "efforts.json")
 CALIBRATION_KEY = os.environ.get("CALIBRATION_S3_KEY", "calibration.json")
+# The saved bundle the application falls back to. Read here only as the list of
+# segments the rider actually sees, which is what makes a segment worth the
+# quota to learn about.
+BUNDLE_KEY = os.environ.get("BUNDLE_S3_KEY", "opportunities.json")
+
+CELL_DEG = 0.1
+
+
+def cell_id(lat: float, lon: float) -> str:
+    """The forecast cell a point falls in, matching lib/server/weather.ts."""
+    return f"{round(lat / CELL_DEG) * CELL_DEG:.2f},{round(lon / CELL_DEG) * CELL_DEG:.2f}"
 
 
 def _record(effort: dict, segment: dict, activity_id: int) -> dict:
@@ -106,6 +117,97 @@ def apply_event(body: dict, payload: dict) -> int:
     return added
 
 
+def backfill_candidate(payload: dict, bundle: dict) -> dict | None:
+    """The untracked segment worth learning about next.
+
+    Ranked by how often the rider has ridden it, because that is both the most
+    evidence per call and the strongest signal that they care about the segment.
+    Segments they have never ridden are skipped: there is no history to fetch,
+    and no record to compare a prediction against either.
+    """
+    known = set(payload.get("segments") or {})
+    candidates = [
+        s
+        for s in (bundle.get("segments") or [])
+        if str(s.get("id")) not in known and (s.get("effort_count_personal") or 0) > 0
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda s: s.get("effort_count_personal") or 0)
+
+
+def backfill_segment(payload: dict, segment: dict) -> int:
+    """Pull one segment's effort history into the store. Returns efforts added.
+
+    Costs a handful of Strava reads, which is why exactly one segment is taken
+    per run. Coverage fills in over a fortnight instead of spiking a daily
+    allowance this rider already spends, and every segment added moves from the
+    rider-level model at 83s mean error to its own fit at 52s.
+    """
+    segment_id = int(segment["id"])
+    efforts = strava.all_efforts(segment_id)
+    usable = [e for e in efforts if e.get("elapsed_time") and e.get("start_date")]
+    if not usable:
+        print(f"[backfill] {segment.get('name')}: no usable efforts, recording nothing")
+        return 0
+
+    points = segment.get("points") or []
+    if len(points) < 2:
+        print(f"[backfill] {segment.get('name')}: no geometry in the bundle")
+        return 0
+    middle = points[len(points) // 2]
+
+    profile = None
+    try:
+        profile = strava.altitude_profile(segment_id)
+    except (RateLimited, Unavailable) as exc:
+        # The efforts are the expensive part and they are already in hand. A
+        # segment with history and an average gradient still beats one with
+        # neither, and the profile can arrive on a later run.
+        print(f"[backfill] {segment.get('name')}: no elevation profile ({exc})")
+
+    payload["segments"][str(segment_id)] = {
+        "id": segment_id,
+        "name": segment.get("name"),
+        "distance_m": segment.get("distance_m"),
+        "average_grade": segment.get("average_grade"),
+        "pr_elapsed_time": segment.get("pr_elapsed_time"),
+        "cell_id": segment.get("cell_id") or cell_id(middle[0], middle[1]),
+        "points": points,
+        "elevation_profile": profile,
+    }
+
+    cell = payload["segments"][str(segment_id)]["cell_id"]
+    seen = {e.get("effort_id") for e in payload["efforts"]}
+    added = 0
+    for effort in usable:
+        if effort.get("id") in seen:
+            continue
+        payload["efforts"].append(
+            {
+                "segment_id": segment_id,
+                "effort_id": effort.get("id"),
+                "activity_id": (effort.get("activity") or {}).get("id"),
+                "start_date": effort["start_date"],
+                "elapsed_time_s": effort["elapsed_time"],
+                "moving_time_s": effort.get("moving_time"),
+                "distance_m": effort.get("distance"),
+                "average_watts": effort.get("average_watts"),
+                "device_watts": effort.get("device_watts"),
+                "average_heartrate": effort.get("average_heartrate"),
+                "cell_id": cell,
+                "weather": None,
+            }
+        )
+        added += 1
+
+    print(
+        f"[backfill] {segment.get('name')}: {added} efforts, "
+        f"profile {'yes' if profile else 'no'}"
+    )
+    return added
+
+
 def ingest(event, _context=None):
     """SQS entry point. One event per invocation; see the reserved concurrency."""
     records = event.get("Records") or []
@@ -177,9 +279,28 @@ def attach_weather(payload: dict) -> int:
 def refresh(_event=None, _context=None):
     """Scheduled entry point: backfill weather, then rebuild the calibration."""
     payload = store.load(EFFORTS_KEY)
+
+    # One untracked segment per run, and only while there is daily allowance to
+    # spare. This is discretionary work: nobody asked for it today, so it must
+    # never be the call that leaves the application unable to refresh the
+    # segments the rider did ask for.
+    backfilled = 0
+    try:
+        if strava.discretionary_allowed():
+            bundle = store.load(BUNDLE_KEY)
+            candidate = backfill_candidate(payload, bundle)
+            if candidate and strava.discretionary_allowed():
+                backfilled = backfill_segment(payload, candidate)
+        else:
+            print(f"[backfill] skipped, quota at {strava.quota()}")
+    except (RateLimited, Unavailable) as exc:
+        # Never fatal. The rebuild below is the part that matters, and it works
+        # on whatever history is already held.
+        print(f"[backfill] unavailable this run: {exc}")
+
     attached = attach_weather(payload)
 
-    if attached:
+    if attached or backfilled:
         payload["generated_at"] = datetime.now(timezone.utc).strftime(
             "%Y-%m-%dT%H:%M:%SZ"
         )
@@ -189,22 +310,25 @@ def refresh(_event=None, _context=None):
     # over a few hundred efforts, and it means a change to the model itself
     # reaches the application on the next schedule rather than needing someone
     # to remember.
-    bundle = build_calibration(payload)
-    store.save_calibration(CALIBRATION_KEY, bundle)
+    calibration = build_calibration(payload)
+    store.save_calibration(CALIBRATION_KEY, calibration)
 
-    rider = bundle.get("rider") or {}
-    fitted = sum(1 for v in bundle["segments"].values() if v.get("power_w"))
+    rider = calibration.get("rider") or {}
+    fitted = sum(1 for v in calibration["segments"].values() if v.get("power_w"))
     print(
-        f"[refresh] calibration rebuilt: {len(bundle['segments'])} segments, "
+        f"[refresh] calibration rebuilt: {len(calibration['segments'])} segments, "
         f"{fitted} with fitted power, "
         f"rider CP {rider.get('cp_w', 0):.0f} W over "
         f"{rider.get('attempt_count', 0)} attempts"
     )
     return {
         "weather_attached": attached,
-        "segments": len(bundle["segments"]),
+        "segments_backfilled": 1 if backfilled else 0,
+        "efforts_backfilled": backfilled,
+        "segments": len(calibration["segments"]),
         "with_fitted_power": fitted,
         "efforts": len(payload["efforts"]),
+        "strava_quota": strava.quota(),
     }
 
 

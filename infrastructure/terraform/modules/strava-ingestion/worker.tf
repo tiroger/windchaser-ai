@@ -144,6 +144,7 @@ resource "aws_lambda_function" "worker" {
       APP_DATA_BUCKET    = var.app_data_bucket
       EFFORTS_S3_KEY     = var.efforts_s3_key
       CALIBRATION_S3_KEY = var.calibration_s3_key
+      BUNDLE_S3_KEY      = var.bundle_s3_key
     }
   }
 

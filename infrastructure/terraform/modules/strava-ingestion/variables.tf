@@ -92,6 +92,18 @@ variable "calibration_s3_key" {
   default     = "calibration.json"
 }
 
+variable "bundle_s3_key" {
+  description = <<-EOT
+    The saved opportunity bundle, read by the worker purely as the list of
+    segments the rider actually sees. That list is what makes a segment worth
+    spending Strava reads to learn about: the worker pulls the history for one
+    untracked segment per run, so coverage fills in over a fortnight rather
+    than spiking a daily allowance this rider already spends.
+  EOT
+  type        = string
+  default     = "opportunities.json"
+}
+
 variable "refresh_schedule" {
   description = <<-EOT
     How often to attach newly available reanalysis weather and rebuild.

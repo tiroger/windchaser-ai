@@ -18,7 +18,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "packages" / "cycling-analytics"))
 sys.path.insert(0, str(REPO))
 
-from services.strava_worker import handler, weather  # noqa: E402
+from services.strava_worker import handler, strava, weather  # noqa: E402
 
 
 def history() -> dict:
@@ -195,6 +195,109 @@ def test_the_trigger_decides_which_path_runs() -> None:
     finally:
         handler.ingest, handler.refresh = ingest, refresh
     assert seen == ["ingest", "refresh", "refresh"], seen
+
+
+def test_backfill_prefers_the_most_ridden_untracked_segment() -> None:
+    store = history()
+    bundle = {
+        "segments": [
+            # Already known; its history is in hand.
+            {"id": 1001, "name": "Tracked climb", "effort_count_personal": 40},
+            {"id": 2002, "name": "Ridden twice", "effort_count_personal": 2},
+            {"id": 2003, "name": "Ridden often", "effort_count_personal": 25},
+            # Never ridden: no history to fetch and no record to beat either.
+            {"id": 2004, "name": "Never ridden", "effort_count_personal": 0},
+        ]
+    }
+    pick = handler.backfill_candidate(store, bundle)
+    assert pick and pick["id"] == 2003, pick
+
+
+def test_backfill_stops_when_there_is_nothing_left() -> None:
+    store = history()
+    bundle = {"segments": [{"id": 1001, "name": "Tracked climb", "effort_count_personal": 9}]}
+    assert handler.backfill_candidate(store, bundle) is None
+
+
+def test_backfill_records_history_and_geometry() -> None:
+    store = history()
+    segment = {
+        "id": 2003,
+        "name": "New climb",
+        "distance_m": 4000,
+        "average_grade": 7.0,
+        "pr_elapsed_time": 900,
+        "cell_id": "41.10,-73.90",
+        "points": [[41.1, -73.9], [41.11, -73.9], [41.12, -73.9]],
+        "effort_count_personal": 3,
+    }
+    fetched = [
+        {"id": 91, "start_date": "2026-08-01T12:00:00Z", "elapsed_time": 900,
+         "moving_time": 890, "average_watts": 250, "device_watts": True,
+         "activity": {"id": 77}},
+        # No start date: unusable, and silently keeping it would put a record
+        # with no timestamp into a training set joined to weather by the hour.
+        {"id": 92, "elapsed_time": 910},
+    ]
+    all_efforts, profile = strava.all_efforts, strava.altitude_profile
+    strava.all_efforts = lambda sid, **kw: fetched
+    strava.altitude_profile = lambda sid: {"distance_m": [0, 4000], "altitude_m": [10, 290]}
+    try:
+        added = handler.backfill_segment(store, segment)
+    finally:
+        strava.all_efforts, strava.altitude_profile = all_efforts, profile
+
+    assert added == 1, added
+    assert "2003" in store["segments"]
+    assert store["segments"]["2003"]["elevation_profile"]["altitude_m"] == [10, 290]
+    recorded = store["efforts"][0]
+    assert recorded["segment_id"] == 2003 and recorded["activity_id"] == 77
+    assert recorded["weather"] is None, "weather must wait for the archive"
+
+
+def test_backfill_keeps_the_efforts_when_the_profile_fails() -> None:
+    store = history()
+    segment = {
+        "id": 2005, "name": "Partial", "distance_m": 1000, "average_grade": 3.0,
+        "pr_elapsed_time": 300, "cell_id": "41.10,-73.90",
+        "points": [[41.1, -73.9], [41.11, -73.9]], "effort_count_personal": 2,
+    }
+    all_efforts, profile = strava.all_efforts, strava.altitude_profile
+
+    def refuse(sid):
+        raise strava.RateLimited("quota")
+
+    strava.all_efforts = lambda sid, **kw: [
+        {"id": 93, "start_date": "2026-08-01T12:00:00Z", "elapsed_time": 300,
+         "moving_time": 300, "average_watts": 200, "device_watts": True}
+    ]
+    strava.altitude_profile = refuse
+    try:
+        added = handler.backfill_segment(store, segment)
+    finally:
+        strava.all_efforts, strava.altitude_profile = all_efforts, profile
+
+    # The efforts cost the calls and are already in hand. A segment with history
+    # and an average gradient beats one with neither.
+    assert added == 1
+    assert store["segments"]["2005"]["elevation_profile"] is None
+
+
+def test_quota_accounting_gates_optional_work() -> None:
+    original = strava._quota
+    try:
+        strava._quota = None
+        assert strava.discretionary_allowed(), "unknown quota must not block"
+        strava._quota = {"short_used": 2, "short_limit": 100,
+                         "daily_used": 500, "daily_limit": 1000}
+        assert strava.discretionary_allowed(), "half spent is fine"
+        strava._quota = {"short_used": 2, "short_limit": 100,
+                         "daily_used": 850, "daily_limit": 1000}
+        # Backfilling a segment nobody asked for today must never be the call
+        # that leaves the app unable to refresh the ones they did.
+        assert not strava.discretionary_allowed(), "past the ceiling it must stand down"
+    finally:
+        strava._quota = original
 
 
 def main() -> None:
