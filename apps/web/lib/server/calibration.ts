@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
-import type { Segment } from "../types";
+import type { Bundle, Segment } from "../types";
 
 /**
  * Per-segment calibration: power fitted across recorded attempts in their real
@@ -102,4 +102,57 @@ export async function applyCalibration(segments: Segment[]): Promise<number> {
     if (entry.power_w) applied++;
   }
   return applied;
+}
+
+
+/**
+ * The saved opportunity bundle, used only when a provider is unreachable.
+ *
+ * Deployed, this lives beside the calibration in S3 for the same reason: it
+ * holds real segment geometry and personal record times. Without it a Strava
+ * rate limit -- which happens routinely, the read quota is a hundred calls per
+ * fifteen minutes -- takes the whole app down instead of degrading it.
+ */
+let savedBundle: Bundle | null | undefined;
+let bundleInFlight: Promise<Bundle | null> | null = null;
+
+async function loadBundle(): Promise<Bundle | null> {
+  try {
+    const path = join(process.cwd(), "fixtures", "opportunities.json");
+    return JSON.parse(readFileSync(path, "utf8")) as Bundle;
+  } catch {
+    // Expected when deployed; the working copy is not shipped.
+  }
+
+  const bucket = process.env.APP_DATA_BUCKET;
+  const key = process.env.BUNDLE_S3_KEY;
+  if (!bucket || !key) return null;
+
+  try {
+    const client = new S3Client({ region: process.env.AWS_REGION || "us-east-1" });
+    const result = await client.send(
+      new GetObjectCommand({ Bucket: bucket, Key: key }),
+    );
+    const body = await result.Body?.transformToString();
+    return body ? (JSON.parse(body) as Bundle) : null;
+  } catch (error) {
+    console.error(
+      "[bundle] could not read the saved bundle:",
+      error instanceof Error ? error.message : error,
+    );
+    return null;
+  }
+}
+
+/** Resolved once per container. Null means there is no fallback available. */
+export async function savedOpportunityBundle(): Promise<Bundle | null> {
+  if (savedBundle !== undefined) return savedBundle;
+  if (!bundleInFlight) {
+    bundleInFlight = loadBundle().then((b) => {
+      savedBundle = b;
+      bundleInFlight = null;
+      return b;
+    });
+  }
+  return bundleInFlight;
 }

@@ -1,8 +1,8 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
 import { haversineM } from "@/lib/geo";
-import { applyCalibration } from "@/lib/server/calibration";
+import {
+  applyCalibration,
+  savedOpportunityBundle,
+} from "@/lib/server/calibration";
 import { stravaConfig } from "@/lib/server/env";
 import {
   clusterRegions,
@@ -48,14 +48,8 @@ const mid = (s: Segment): LatLon => s.points[Math.floor(s.points.length / 2)];
  * never fail a request: live data is the point, and the fallback only exists
  * for when a provider is unreachable.
  */
-function readFixtures(): Bundle | null {
-  try {
-    const path = join(process.cwd(), "fixtures", "opportunities.json");
-    return JSON.parse(readFileSync(path, "utf8")) as Bundle;
-  } catch {
-    return null;
-  }
-}
+// Resolution lives in the calibration module, which already knows how to read
+// the working copy first and S3 second.
 
 
 async function loadStarred(): Promise<SegmentCache> {
@@ -122,16 +116,16 @@ export async function GET(request: Request) {
   let saved: Bundle | null = null;
   let savedChecked = false;
 
-  const loadSaved = (): Bundle | null => {
+  const loadSaved = async (): Promise<Bundle | null> => {
     if (!savedChecked) {
-      saved = readFixtures();
+      saved = await savedOpportunityBundle();
       savedChecked = true;
     }
     return saved;
   };
 
   if (!(await stravaConfig())) {
-    const bundle = loadSaved();
+    const bundle = await loadSaved();
     if (!bundle) {
       return Response.json(
         {
@@ -152,7 +146,7 @@ export async function GET(request: Request) {
       athlete = loaded.athlete;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
-      const bundle = loadSaved();
+      const bundle = await loadSaved();
       if (!bundle) {
         return Response.json({ error: message }, { status: 502 });
       }
@@ -232,7 +226,7 @@ export async function GET(request: Request) {
       }
     } else if (targetRegion) {
       // Reuse whatever discovered segments the saved bundle already had.
-      const cached = (loadSaved()?.segments ?? []).filter(
+      const cached = ((await loadSaved())?.segments ?? []).filter(
         (s) => s.source === "discovered" && !known.has(s.id),
       );
       for (const seg of cached) all.push(seg);
@@ -260,7 +254,7 @@ export async function GET(request: Request) {
           const m = mid(s);
           return cellOf(m[0], m[1]);
         }),
-        loadSaved()?.forecast_cells ?? {},
+        (await loadSaved())?.forecast_cells ?? {},
       );
       forecastCells = result.cells;
       if (result.savedCount > 0 || result.failed.length > 0) {
@@ -273,7 +267,7 @@ export async function GET(request: Request) {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
-      forecastCells = loadSaved()?.forecast_cells ?? {};
+      forecastCells = (await loadSaved())?.forecast_cells ?? {};
       forecastSource = "saved";
       notices.push(`Forecast provider unavailable (${message}); using the last saved forecast.`);
     }
@@ -294,7 +288,7 @@ export async function GET(request: Request) {
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    const bundle = loadSaved();
+    const bundle = await loadSaved();
     if (!bundle) {
       return Response.json({ error: message }, { status: 502 });
     }
