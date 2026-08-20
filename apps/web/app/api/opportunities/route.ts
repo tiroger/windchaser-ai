@@ -40,9 +40,20 @@ const EXPLORED_TTL_MS = 6 * 60 * 60 * 1000;
 
 const mid = (s: Segment): LatLon => s.points[Math.floor(s.points.length / 2)];
 
-function readFixtures(): Bundle {
-  const path = join(process.cwd(), "fixtures", "opportunities.json");
-  return JSON.parse(readFileSync(path, "utf8")) as Bundle;
+/**
+ * The saved bundle is a development convenience, not a deployment artifact. It
+ * holds real ride locations and personal record times, so it is gitignored and
+ * genuinely absent in a deployed environment. Its absence is normal and must
+ * never fail a request: live data is the point, and the fallback only exists
+ * for when a provider is unreachable.
+ */
+function readFixtures(): Bundle | null {
+  try {
+    const path = join(process.cwd(), "fixtures", "opportunities.json");
+    return JSON.parse(readFileSync(path, "utf8")) as Bundle;
+  } catch {
+    return null;
+  }
 }
 
 interface CalibrationEntry {
@@ -69,6 +80,8 @@ function readCalibration(): Record<string, CalibrationEntry> {
     };
     calibrationCache = parsed.segments ?? {};
   } catch {
+    // Also gitignored, also optional: without it segments fall back to
+    // single-PR calibration, which is less accurate but entirely functional.
     calibrationCache = {};
   }
   return calibrationCache;
@@ -144,14 +157,27 @@ export async function GET(request: Request) {
   let starred: Segment[];
   let athlete: Bundle["athlete"];
   let saved: Bundle | null = null;
+  let savedChecked = false;
 
-  const loadSaved = (): Bundle => {
-    if (!saved) saved = readFixtures();
+  const loadSaved = (): Bundle | null => {
+    if (!savedChecked) {
+      saved = readFixtures();
+      savedChecked = true;
+    }
     return saved;
   };
 
   if (!(await stravaConfig())) {
     const bundle = loadSaved();
+    if (!bundle) {
+      return Response.json(
+        {
+          error:
+            "No Strava credentials and no saved bundle. Populate the Strava secret for this environment.",
+        },
+        { status: 503 },
+      );
+    }
     starred = bundle.segments.filter((s) => s.source === "starred");
     athlete = bundle.athlete;
     segmentSource = "saved";
@@ -163,15 +189,14 @@ export async function GET(request: Request) {
       athlete = loaded.athlete;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
-      try {
-        const bundle = loadSaved();
-        starred = bundle.segments.filter((s) => s.source === "starred");
-        athlete = bundle.athlete;
-        segmentSource = "saved";
-        notices.push(`Strava unavailable (${message}); segments come from the last saved bundle.`);
-      } catch {
+      const bundle = loadSaved();
+      if (!bundle) {
         return Response.json({ error: message }, { status: 502 });
       }
+      starred = bundle.segments.filter((s) => s.source === "starred");
+      athlete = bundle.athlete;
+      segmentSource = "saved";
+      notices.push(`Strava unavailable (${message}); segments come from the last saved bundle.`);
     }
   }
 
@@ -244,7 +269,7 @@ export async function GET(request: Request) {
       }
     } else if (targetRegion) {
       // Reuse whatever discovered segments the saved bundle already had.
-      const cached = loadSaved().segments.filter(
+      const cached = (loadSaved()?.segments ?? []).filter(
         (s) => s.source === "discovered" && !known.has(s.id),
       );
       for (const seg of cached) all.push(seg);
@@ -272,7 +297,7 @@ export async function GET(request: Request) {
           const m = mid(s);
           return cellOf(m[0], m[1]);
         }),
-        loadSaved().forecast_cells,
+        loadSaved()?.forecast_cells ?? {},
       );
       forecastCells = result.cells;
       if (result.savedCount > 0 || result.failed.length > 0) {
@@ -285,7 +310,7 @@ export async function GET(request: Request) {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
-      forecastCells = loadSaved().forecast_cells;
+      forecastCells = loadSaved()?.forecast_cells ?? {};
       forecastSource = "saved";
       notices.push(`Forecast provider unavailable (${message}); using the last saved forecast.`);
     }
@@ -306,17 +331,16 @@ export async function GET(request: Request) {
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    try {
-      const bundle = loadSaved();
-      applyCalibration(bundle.segments);
-      return Response.json({
-        ...bundle,
-        live: false,
-        sources: { segments: "saved", forecast: "saved" },
-        notice: `Live data unavailable (${message}). Showing the last saved bundle.`,
-      });
-    } catch {
+    const bundle = loadSaved();
+    if (!bundle) {
       return Response.json({ error: message }, { status: 502 });
     }
+    applyCalibration(bundle.segments);
+    return Response.json({
+      ...bundle,
+      live: false,
+      sources: { segments: "saved", forecast: "saved" },
+      notice: `Live data unavailable (${message}). Showing the last saved bundle.`,
+    });
   }
 }
