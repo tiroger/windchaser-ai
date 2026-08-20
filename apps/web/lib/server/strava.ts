@@ -11,6 +11,58 @@ const API = "https://www.strava.com/api/v3";
  * "Strava has stopped answering". Swallowing the second as if it were the first
  * returns a nearly empty list while still reporting it as live data.
  */
+/**
+ * Strava reports quota on every response as "fifteenMinute,daily" pairs. Section
+ * 5 of the project plan asks for rate-limit accounting, not just backoff, and
+ * the difference matters: backoff handles being refused, accounting stops us
+ * spending the day's budget on work nobody asked for.
+ *
+ * A full starred refresh costs one call per segment, so a couple of refreshes
+ * plus effort history can exhaust a thousand reads in an afternoon. When that
+ * happens the app has no live data until midnight UTC.
+ */
+export interface RateLimitState {
+  shortTermUsed: number;
+  shortTermLimit: number;
+  dailyUsed: number;
+  dailyLimit: number;
+  observedAt: string;
+}
+
+let rateLimit: RateLimitState | null = null;
+
+function recordRateLimit(headers: Headers): void {
+  const usage = headers.get("x-readratelimit-usage");
+  const limit = headers.get("x-readratelimit-limit");
+  if (!usage || !limit) return;
+  const [su, du] = usage.split(",").map((n) => Number(n.trim()));
+  const [sl, dl] = limit.split(",").map((n) => Number(n.trim()));
+  if ([su, du, sl, dl].some((n) => !Number.isFinite(n))) return;
+  rateLimit = {
+    shortTermUsed: su,
+    shortTermLimit: sl,
+    dailyUsed: du,
+    dailyLimit: dl,
+    observedAt: new Date().toISOString(),
+  };
+}
+
+export function rateLimitState(): RateLimitState | null {
+  return rateLimit;
+}
+
+/**
+ * Fraction of the daily quota beyond which optional work stops. Starred
+ * segments are what the rider came for; discovering new ones nearby is a bonus
+ * and is the first thing to give up.
+ */
+const DISCOVERY_BUDGET_CEILING = 0.8;
+
+export function discoveryAffordable(): boolean {
+  if (!rateLimit) return true;
+  return rateLimit.dailyUsed / rateLimit.dailyLimit < DISCOVERY_BUDGET_CEILING;
+}
+
 export class StravaRateLimitError extends Error {
   constructor() {
     super("Strava rate limit reached. Try again in a few minutes.");
@@ -57,6 +109,9 @@ async function api<T>(path: string): Promise<T> {
     headers: { Authorization: `Bearer ${token}` },
     cache: "no-store",
   });
+  // Recorded from every response, including refusals, since a 429 still reports
+  // where the quota stands.
+  recordRateLimit(res.headers);
   if (res.status === 429) {
     throw new StravaRateLimitError();
   }
@@ -223,6 +278,12 @@ export async function exploreSegments(
 ): Promise<Segment[]> {
   const dLat = radiusKm / 111;
   const dLon = radiusKm / (111 * Math.max(Math.cos((lat * Math.PI) / 180), 0.01));
+  if (!discoveryAffordable()) {
+    throw new Error(
+      "Skipping discovery to preserve the remaining daily Strava quota for " +
+        "starred segments.",
+    );
+  }
   const bounds = [lat - dLat, lon - dLon, lat + dLat, lon + dLon].join(",");
   const payload = await api<{ segments: Array<{ id: number }> }>(
     `/segments/explore?bounds=${bounds}&activity_type=riding`,

@@ -1,4 +1,5 @@
 import { calibrationTable } from "@/lib/server/calibration";
+import { rateLimitState } from "@/lib/server/strava";
 import { stravaConfig } from "@/lib/server/env";
 import { secretsConfigured } from "@/lib/server/secrets";
 
@@ -53,6 +54,8 @@ export async function GET() {
         segments: Object.keys(table).length,
         with_fitted_power: fitted,
       },
+      // Null until this container has made a Strava call.
+      strava_quota: rateLimitState(),
       elapsed_ms: Date.now() - started,
     },
     { status: credentials.resolved ? 200 : 503 },
