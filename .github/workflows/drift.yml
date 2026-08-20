@@ -18,18 +18,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.8.5
+          terraform_version: 1.15.8
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_TERRAFORM_PLAN_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'us-west-2' }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
       - name: Detect development drift
         working-directory: infrastructure/terraform/environments/dev
         run: |
           terraform init \
             -backend-config="bucket=${{ vars.TERRAFORM_STATE_BUCKET }}" \
             -backend-config="key=windchaser-ai/dev/terraform.tfstate" \
-            -backend-config="region=${{ vars.AWS_REGION || 'us-west-2' }}" \
+            -backend-config="region=${{ vars.AWS_REGION || 'us-east-1' }}" \
             -backend-config="encrypt=true" \
             -backend-config="use_lockfile=true"
           terraform plan -detailed-exitcode

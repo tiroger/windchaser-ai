@@ -43,7 +43,7 @@ jobs:
 
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.8.5
+          terraform_version: 1.15.8
 
       - name: Terraform format
         run: terraform fmt -recursive -check infrastructure/terraform
@@ -56,6 +56,12 @@ jobs:
 
       - name: Validate production root
         working-directory: infrastructure/terraform/environments/prod
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+      - name: Validate bootstrap root
+        working-directory: infrastructure/terraform/bootstrap
         run: |
           terraform init -backend=false
           terraform validate
