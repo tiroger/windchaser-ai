@@ -35,10 +35,11 @@ variable "activate_cost_allocation_tag" {
     o-ghem5w883m, so this is permitted here. It stays off until AWS has seen
     the Application tag in billing data, roughly a day after the first tagged
     resource is billed; enabling it sooner fails with "Tag keys not found".
-    Flip to true on a later apply, or set -var once the tag is visible.
+    Verified visible to Cost Explorer as an Inactive UserDefined tag on
+    2026-08-20 and activated then.
   EOT
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "amplify_github_token" {
