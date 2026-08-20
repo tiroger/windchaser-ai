@@ -49,6 +49,10 @@ resource "aws_sns_topic_subscription" "email" {
 
 # -------------------------------------------------------------- budget --
 
+# AWS refuses to activate a cost allocation tag it has not yet observed in
+# billing data, which lags roughly a day behind the first tagged spend. So this
+# cannot be switched on in the same breath as creating the first tagged
+# resource; it is enabled on a later apply, once the tag exists to be found.
 resource "aws_ce_cost_allocation_tag" "application" {
   count = var.activate_cost_allocation_tag ? 1 : 0
 
@@ -119,8 +123,12 @@ resource "aws_ce_anomaly_monitor" "application" {
 }
 
 resource "aws_ce_anomaly_subscription" "application" {
-  name      = "${local.name}-anomaly-alerts"
-  frequency = "DAILY"
+  name = "${local.name}-anomaly-alerts"
+
+  # SNS subscribers are only accepted at IMMEDIATE frequency; DAILY and WEEKLY
+  # support email subscribers only. Immediate is what you want anyway for a
+  # runaway spend loop, where a day's delay is the whole problem.
+  frequency = "IMMEDIATE"
 
   monitor_arn_list = [aws_ce_anomaly_monitor.application.arn]
 

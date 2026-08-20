@@ -64,9 +64,10 @@ variable "anomaly_threshold_usd" {
 
 variable "activate_cost_allocation_tag" {
   description = <<-EOT
-    Activate the Application cost allocation tag. Only valid in an
-    organization's management account, and AWS can take up to 24 hours to
-    backfill data, during which a tag-filtered budget reports zero.
+    Activate the Application cost allocation tag. Requires the organization's
+    management account, and AWS must already have observed the tag in billing
+    data, which lags roughly a day behind the first tagged spend. Enabling it
+    too early fails with "Tag keys not found".
   EOT
   type        = bool
   default     = false

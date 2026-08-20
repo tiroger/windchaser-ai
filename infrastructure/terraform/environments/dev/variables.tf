@@ -31,9 +31,12 @@ variable "activate_cost_allocation_tag" {
     see spend. Requires the organization's management account, and AWS takes up
     to 24 hours to backfill, during which the budget reports zero.
 
-    Verified valid here: account 755319535705 is the management account of
-    organization o-ghem5w883m.
+    Account 755319535705 is the management account of organization
+    o-ghem5w883m, so this is permitted here. It stays off until AWS has seen
+    the Application tag in billing data, roughly a day after the first tagged
+    resource is billed; enabling it sooner fails with "Tag keys not found".
+    Flip to true on a later apply, or set -var once the tag is visible.
   EOT
   type        = bool
-  default     = true
+  default     = false
 }
