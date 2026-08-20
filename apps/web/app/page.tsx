@@ -294,9 +294,31 @@ export default function Page() {
 
         <span className="masthead-spacer" />
 
-        <span className={`status ${bundle.live ? "is-live" : "is-saved"}`}>
+        <span
+          className={`status ${
+            bundle.sources?.segments === "saved" ? "is-saved" : "is-live"
+          }`}
+          title={
+            bundle.sources?.segments === "saved"
+              ? "Segments come from the last saved bundle"
+              : "Segments fetched from Strava"
+          }
+        >
           <span className="dot" />
-          {bundle.live ? "Live data" : "Saved bundle"}
+          Segments
+        </span>
+        <span
+          className={`status ${
+            bundle.sources?.forecast === "saved" ? "is-saved" : "is-live"
+          }`}
+          title={
+            bundle.sources?.forecast === "saved"
+              ? "Forecast comes from the last saved bundle"
+              : "Forecast fetched from Open-Meteo"
+          }
+        >
+          <span className="dot" />
+          Forecast
         </span>
         <ThemeToggle theme={theme} onChange={setTheme} />
       </header>

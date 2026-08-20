@@ -25,6 +25,14 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>();
 const TTL_MS = 30 * 60 * 1000;
 
+interface OpenMeteoResponse {
+  latitude: number;
+  longitude: number;
+  timezone: string;
+  utc_offset_seconds?: number;
+  hourly: Record<string, (number | null)[]> & { time: string[] };
+}
+
 const HOURLY = [
   "temperature_2m",
   "relative_humidity_2m",
@@ -55,9 +63,22 @@ export async function fetchCell(cell: [number, number]): Promise<ForecastCell> {
     timezone: "auto",
   });
 
-  const res = await fetch(`${OPEN_METEO}?${query}`, { cache: "no-store" });
-  if (!res.ok) throw new Error(`Open-Meteo ${res.status} for cell ${id}`);
-  const payload = await res.json();
+  // Open-Meteo rate-limits bursts, so back off rather than giving up on the
+  // first 429. Worth retrying: a stale forecast is the thing users notice.
+  let payload: OpenMeteoResponse | undefined;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await fetch(`${OPEN_METEO}?${query}`, { cache: "no-store" });
+    if (res.ok) {
+      payload = await res.json();
+      break;
+    }
+    if (res.status !== 429 && res.status < 500) {
+      throw new Error(`Open-Meteo ${res.status} for cell ${id}`);
+    }
+    if (attempt === 2) throw new Error(`Open-Meteo ${res.status} for cell ${id}`);
+    await new Promise((r) => setTimeout(r, 400 * 2 ** attempt));
+  }
+  if (!payload) throw new Error(`Open-Meteo gave no payload for cell ${id}`);
   const h = payload.hourly;
 
   const forecast: ForecastCell = {
@@ -82,17 +103,56 @@ export async function fetchCell(cell: [number, number]): Promise<ForecastCell> {
   return forecast;
 }
 
+/** Concurrent requests to the forecast provider. Deliberately modest. */
+const CONCURRENCY = 4;
+
+export interface CellsResult {
+  cells: Record<string, ForecastCell>;
+  liveCount: number;
+  savedCount: number;
+  failed: string[];
+}
+
+/**
+ * Fetch one forecast per grid cell, throttled, with per-cell fallback.
+ *
+ * A single unavailable cell must not cost every other cell its live forecast,
+ * so each one falls back independently to whatever the saved bundle holds.
+ */
 export async function fetchCells(
   cells: Array<[number, number]>,
-): Promise<Record<string, ForecastCell>> {
+  fallback: Record<string, ForecastCell> = {},
+): Promise<CellsResult> {
   const unique = new Map<string, [number, number]>();
   for (const c of cells) unique.set(cellId(c), c);
+  const queue = [...unique.values()];
 
-  const entries = await Promise.all(
-    [...unique.values()].map(async (c) => {
-      const forecast = await fetchCell(c);
-      return [forecast.cell_id, forecast] as const;
-    }),
+  const out: Record<string, ForecastCell> = {};
+  const failed: string[] = [];
+  let liveCount = 0;
+  let savedCount = 0;
+
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < queue.length) {
+      const cell = queue[cursor++];
+      const id = cellId(cell);
+      try {
+        out[id] = await fetchCell(cell);
+        liveCount++;
+      } catch {
+        if (fallback[id]) {
+          out[id] = fallback[id];
+          savedCount++;
+        } else {
+          failed.push(id);
+        }
+      }
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker),
   );
-  return Object.fromEntries(entries);
+  return { cells: out, liveCount, savedCount, failed };
 }

@@ -45,14 +45,16 @@ export interface ForecastCell {
   utc_offset_seconds: number;
   issued_at: string;
   time: string[];
-  temperature_c: number[];
-  humidity_pct: number[];
-  pressure_hpa: number[];
-  precip_mm: number[];
-  precip_prob: number[];
-  wind_speed_ms: number[];
-  wind_from_deg: number[];
-  gust_ms: number[];
+  // The provider returns null for hours it has no value for, so the reader
+  // defaults them rather than the writer inventing a zero wind.
+  temperature_c: (number | null)[];
+  humidity_pct: (number | null)[];
+  pressure_hpa: (number | null)[];
+  precip_mm: (number | null)[];
+  precip_prob: (number | null)[];
+  wind_speed_ms: (number | null)[];
+  wind_from_deg: (number | null)[];
+  gust_ms: (number | null)[];
 }
 
 export interface Region {
@@ -68,6 +70,8 @@ export interface Bundle {
   generated_at: string;
   is_sample?: boolean;
   live?: boolean;
+  /** Strava and the forecast provider degrade independently. */
+  sources?: { segments: "live" | "saved"; forecast: "live" | "saved" };
   athlete: {
     firstname: string | null;
     city: string | null;

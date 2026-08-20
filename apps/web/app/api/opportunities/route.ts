@@ -15,6 +15,13 @@ import type { Bundle, LatLon, Region, Segment } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Strava and Open-Meteo fail independently, so they degrade independently.
+ * A Strava rate limit must not cost us a live forecast: segment geometry is
+ * effectively static, while wind is the thing that actually changes.
+ */
+type Freshness = "live" | "saved";
+
 const EXPLORE_RADIUS_KM = 12;
 const EXPLORE_LIMIT = 8;
 /** Beyond this from every known region, treat the rider as somewhere new. */
@@ -130,19 +137,45 @@ export async function GET(request: Request) {
   const here: LatLon | null =
     latParam && lonParam ? [Number(latParam), Number(lonParam)] : null;
 
+  let segmentSource: Freshness = "live";
+  let forecastSource: Freshness = "live";
+  const notices: string[] = [];
+
+  let starred: Segment[];
+  let athlete: Bundle["athlete"];
+  let saved: Bundle | null = null;
+
+  const loadSaved = (): Bundle => {
+    if (!saved) saved = readFixtures();
+    return saved;
+  };
+
   if (!hasStravaCredentials()) {
-    const bundle = readFixtures();
-    applyCalibration(bundle.segments);
-    return Response.json({
-      ...bundle,
-      live: false,
-      notice:
-        "No Strava credentials found. Showing the last saved fixture bundle.",
-    });
+    const bundle = loadSaved();
+    starred = bundle.segments.filter((s) => s.source === "starred");
+    athlete = bundle.athlete;
+    segmentSource = "saved";
+    notices.push("No Strava credentials found, so segments come from the last saved bundle.");
+  } else {
+    try {
+      const loaded = await loadStarred();
+      starred = loaded.segments;
+      athlete = loaded.athlete;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      try {
+        const bundle = loadSaved();
+        starred = bundle.segments.filter((s) => s.source === "starred");
+        athlete = bundle.athlete;
+        segmentSource = "saved";
+        notices.push(`Strava unavailable (${message}); segments come from the last saved bundle.`);
+      } catch {
+        return Response.json({ error: message }, { status: 502 });
+      }
+    }
   }
 
   try {
-    const { segments: starred, athlete } = await loadStarred();
     const all: Segment[] = [];
     const regions: Region[] = [];
 
@@ -193,17 +226,28 @@ export async function GET(request: Request) {
       targetRegion = regions[0];
     }
 
-    if (targetRegion) {
-      const discovered = await discoverAround(
-        targetRegion.lat,
-        targetRegion.lon,
-        known,
-      );
-      for (const seg of discovered) {
-        seg.region_id = targetRegion.id;
-        all.push(seg);
+    if (targetRegion && segmentSource === "live") {
+      try {
+        const discovered = await discoverAround(
+          targetRegion.lat,
+          targetRegion.lon,
+          known,
+        );
+        for (const seg of discovered) {
+          seg.region_id = targetRegion!.id;
+          all.push(seg);
+        }
+        targetRegion.discovered_count = discovered.length;
+      } catch {
+        // Discovery is a bonus. Losing it must not cost the starred segments.
+        notices.push("Nearby segment discovery was unavailable this time.");
       }
-      targetRegion.discovered_count = discovered.length;
+    } else if (targetRegion) {
+      // Reuse whatever discovered segments the saved bundle already had.
+      const cached = loadSaved().segments.filter(
+        (s) => s.source === "discovered" && !known.has(s.id),
+      );
+      for (const seg of cached) all.push(seg);
     }
 
     if (all.length === 0) {
@@ -218,33 +262,57 @@ export async function GET(request: Request) {
       seg.cell_id = cellId(cellOf(m[0], m[1]));
     }
     applyCalibration(all);
-    const forecastCells = await fetchCells(
-      all.map((s) => {
-        const m = mid(s);
-        return cellOf(m[0], m[1]);
-      }),
-    );
+
+    // Always try for a live forecast, even when segments came from the bundle.
+    // Each cell falls back on its own, so one bad cell costs only that cell.
+    let forecastCells: Bundle["forecast_cells"];
+    try {
+      const result = await fetchCells(
+        all.map((s) => {
+          const m = mid(s);
+          return cellOf(m[0], m[1]);
+        }),
+        loadSaved().forecast_cells,
+      );
+      forecastCells = result.cells;
+      if (result.savedCount > 0 || result.failed.length > 0) {
+        forecastSource = "saved";
+        notices.push(
+          `${result.liveCount} of ${
+            result.liveCount + result.savedCount + result.failed.length
+          } forecast cells are live; the rest fall back to the last saved forecast.`,
+        );
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      forecastCells = loadSaved().forecast_cells;
+      forecastSource = "saved";
+      notices.push(`Forecast provider unavailable (${message}); using the last saved forecast.`);
+    }
 
     const centre = targetRegion ?? regions[0];
     const bundle: Bundle = {
       generated_at: new Date().toISOString(),
-      live: true,
+      live: segmentSource === "live" && forecastSource === "live",
+      sources: { segments: segmentSource, forecast: forecastSource },
       athlete,
       centre: { lat: centre.lat, lon: centre.lon },
       regions,
       segments: all.sort((a, b) => a.name.localeCompare(b.name)),
       forecast_cells: forecastCells,
     };
-    return Response.json(bundle);
+    return Response.json(
+      notices.length ? { ...bundle, notice: notices.join(" ") } : bundle,
+    );
   } catch (error) {
-    // Live data failed. The saved bundle keeps the interface usable.
     const message = error instanceof Error ? error.message : "Unknown error";
     try {
-      const bundle = readFixtures();
+      const bundle = loadSaved();
       applyCalibration(bundle.segments);
       return Response.json({
         ...bundle,
         live: false,
+        sources: { segments: "saved", forecast: "saved" },
         notice: `Live data unavailable (${message}). Showing the last saved bundle.`,
       });
     } catch {
