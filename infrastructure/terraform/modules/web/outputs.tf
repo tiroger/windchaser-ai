@@ -42,3 +42,8 @@ output "runtime_role_arn" {
   description = "Role the SSR compute functions run as."
   value       = aws_iam_role.compute.arn
 }
+
+output "app_data_bucket" {
+  description = "Bucket holding runtime data such as the calibration bundle."
+  value       = aws_s3_bucket.app_data.id
+}

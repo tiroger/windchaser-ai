@@ -1,3 +1,4 @@
+import { calibrationTable } from "@/lib/server/calibration";
 import { stravaConfig } from "@/lib/server/env";
 import { secretsConfigured } from "@/lib/server/secrets";
 
@@ -15,6 +16,8 @@ export async function GET() {
 
   const env = {
     STRAVA_SECRET_ARN: Boolean(process.env.STRAVA_SECRET_ARN),
+    APP_DATA_BUCKET: process.env.APP_DATA_BUCKET ?? null,
+    CALIBRATION_S3_KEY: process.env.CALIBRATION_S3_KEY ?? null,
     LIVE_AI_ENABLED: process.env.LIVE_AI_ENABLED ?? null,
     AWS_REGION: process.env.AWS_REGION ?? null,
     NODE_ENV: process.env.NODE_ENV ?? null,
@@ -38,11 +41,18 @@ export async function GET() {
     };
   }
 
+  const table = await calibrationTable();
+  const fitted = Object.values(table).filter((e) => e.power_w).length;
+
   return Response.json(
     {
       status: credentials.resolved ? "ok" : "degraded",
       env,
       credentials,
+      calibration: {
+        segments: Object.keys(table).length,
+        with_fitted_power: fitted,
+      },
       elapsed_ms: Date.now() - started,
     },
     { status: credentials.resolved ? 200 : 503 },

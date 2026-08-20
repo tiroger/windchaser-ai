@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { haversineM } from "@/lib/geo";
+import { applyCalibration } from "@/lib/server/calibration";
 import { stravaConfig } from "@/lib/server/env";
 import {
   clusterRegions,
@@ -56,49 +57,6 @@ function readFixtures(): Bundle | null {
   }
 }
 
-interface CalibrationEntry {
-  segment_id: number;
-  power_w: number | null;
-  attempt_count: number | null;
-  best_moving_time_s: number | null;
-  elevation_profile: Segment["elevation_profile"];
-}
-
-let calibrationCache: Record<string, CalibrationEntry> | null = null;
-
-/**
- * Power fitted across recorded attempts, plus real elevation profiles.
- * Produced offline by scripts/build_calibration.py because it needs the
- * rider's full effort history and reanalysis weather.
- */
-function readCalibration(): Record<string, CalibrationEntry> {
-  if (calibrationCache) return calibrationCache;
-  try {
-    const path = join(process.cwd(), "fixtures", "calibration.json");
-    const parsed = JSON.parse(readFileSync(path, "utf8")) as {
-      segments: Record<string, CalibrationEntry>;
-    };
-    calibrationCache = parsed.segments ?? {};
-  } catch {
-    // Also gitignored, also optional: without it segments fall back to
-    // single-PR calibration, which is less accurate but entirely functional.
-    calibrationCache = {};
-  }
-  return calibrationCache;
-}
-
-/** Attach the fit to each segment; segments without one keep the PR fallback. */
-function applyCalibration(segments: Segment[]): void {
-  const calibration = readCalibration();
-  for (const seg of segments) {
-    const entry = calibration[String(seg.id)];
-    if (!entry) continue;
-    seg.calibrated_power_w = entry.power_w ?? null;
-    seg.attempt_count = entry.attempt_count ?? null;
-    seg.best_moving_time_s = entry.best_moving_time_s ?? null;
-    seg.elevation_profile = entry.elevation_profile ?? null;
-  }
-}
 
 async function loadStarred(): Promise<SegmentCache> {
   if (starredCache && Date.now() - starredCache.fetchedAt < STARRED_TTL_MS) {
@@ -286,7 +244,7 @@ export async function GET(request: Request) {
       const m = mid(seg);
       seg.cell_id = cellId(cellOf(m[0], m[1]));
     }
-    applyCalibration(all);
+    await applyCalibration(all);
 
     // Always try for a live forecast, even when segments came from the bundle.
     // Each cell falls back on its own, so one bad cell costs only that cell.
@@ -335,7 +293,7 @@ export async function GET(request: Request) {
     if (!bundle) {
       return Response.json({ error: message }, { status: 502 });
     }
-    applyCalibration(bundle.segments);
+    await applyCalibration(bundle.segments);
     return Response.json({
       ...bundle,
       live: false,
