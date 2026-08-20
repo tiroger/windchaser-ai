@@ -15,7 +15,10 @@ concurrency:
 
 jobs:
   deploy:
-    if: ${{ vars.AWS_TERRAFORM_APPLY_ROLE_ARN != '' && vars.TERRAFORM_STATE_BUCKET != '' }}
+    # Guard on a repository variable only. The apply role ARN is scoped to the
+    # GitHub environment, and environment variables are not visible to a
+    # job-level if, so testing it here made the job skip unconditionally.
+    if: ${{ vars.TERRAFORM_STATE_BUCKET != '' }}
     runs-on: ubuntu-latest
     environment: production
     env:
@@ -23,6 +26,14 @@ jobs:
       TF_INPUT: "false"
     steps:
       - uses: actions/checkout@v4
+
+      - name: Verify the environment supplies an apply role
+        run: |
+          if [ -z "${{ vars.AWS_TERRAFORM_APPLY_ROLE_ARN }}" ]; then
+            echo "AWS_TERRAFORM_APPLY_ROLE_ARN is not set for this environment."
+            echo "Set it with: gh variable set AWS_TERRAFORM_APPLY_ROLE_ARN --env <name> --body <arn>"
+            exit 1
+          fi
 
       - uses: hashicorp/setup-terraform@v3
         with:
