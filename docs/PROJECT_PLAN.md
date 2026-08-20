@@ -250,7 +250,8 @@ AlertPreference
 Segment
 UserSegment
 SegmentEffort
-ForecastSnapshot
+SegmentCellMap
+ForecastCell
 Opportunity
 Notification
 AgentTraceMetadata
@@ -264,10 +265,22 @@ PK USER#<user_id>             SK PROFILE
 PK USER#<user_id>             SK STRAVA
 PK USER#<user_id>             SK SEGMENT#<segment_id>
 PK SEGMENT#<segment_id>       SK METADATA
-PK SEGMENT#<segment_id>       SK FORECAST#<timestamp>
+PK SEGMENT#<segment_id>       SK CELLMAP#<geometry_version>
+PK CELL#<geohash>             SK FORECAST#<issued_at>#<valid_at>
 PK USER#<user_id>             SK OPPORTUNITY#<timestamp>#<id>
 PK OPPORTUNITY#<id>           SK NOTIFICATION#<id>
 ```
+
+Forecast data is keyed by provider grid cell, never by segment. Two segments a few
+hundred metres apart resolve to the same cell and share one cached provider
+response, as do the same segments across different users. Storing a forecast copy
+per segment would multiply provider calls by segment count and invalidate the
+caching policy in `docs/architecture/COST_STRATEGY.md`.
+
+`SegmentCellMap` records which cells the segment's sections resolve to, versioned
+by geometry so a re-decoded polyline does not silently reuse a stale mapping. The
+opportunity evidence snapshot records the cell identifiers and issuance times
+actually used, so a past decision can be replayed exactly.
 
 Large or replayable objects belong in S3:
 
@@ -281,17 +294,45 @@ Large or replayable objects belong in S3:
 ### Retention
 
 - Raw webhook bodies: 14-30 days.
-- Forecast snapshots: 30-90 days, aggregated before expiration.
+- Forecast cells: 7-14 days by DynamoDB TTL. They are a cache, and the values that
+  mattered are already copied into the opportunity evidence snapshot.
+- Forecast-versus-actual pairs used for calibration: retained in compacted form in
+  S3, independent of the cell TTL.
 - Detailed agent traces: 14-30 days in production; sanitized exemplars retained.
 - Opportunity evidence: retained with compact normalized fields.
 - S3 lifecycle transitions/deletion configured in Terraform.
 
 ## 9. Opportunity algorithm
 
+### Organizing rule
+
+Inputs fall into two categories and are never mixed:
+
+1. Anything that changes the predicted **time** enters the physics model: wind
+   resolved per section, air density, gradient, and available rider power.
+2. Anything that changes whether the rider **wants to go**, without materially
+   changing the time, stays a score modifier: precipitation, gust handling risk,
+   daylight, and quiet hours.
+
+Forecast uncertainty belongs to neither. It widens the predicted time interval,
+which lowers the probability of beating the target, which lowers the score by
+construction. Uncertainty is never added to the score as its own term, because a
+confident mediocre window must not outrank an uncertain excellent one.
+
+### Section geometry
+
+Decode the segment polyline and resample it into sections short enough that
+bearing and gradient are approximately constant within each one. Target 50-100 m
+sections, subdividing further where curvature is high.
+
+Each section carries distance, bearing, gradient, elevation, and an optional
+exposure factor. Weather is attached per section from the nearest cached forecast
+grid cell rather than requested per section.
+
 ### Wind component
 
-Weather direction is commonly reported as the direction wind comes from. Convert it
-to a travel direction before comparing it with road bearing.
+Weather direction is commonly reported as the direction wind comes from. Convert
+it to a travel direction before comparing it with road bearing.
 
 For section `i`:
 
@@ -299,47 +340,182 @@ For section `i`:
 wind_to_i = (wind_from_i + 180) mod 360
 tailwind_i = wind_speed_i * cos(wind_to_i - road_bearing_i)
 crosswind_i = abs(wind_speed_i * sin(wind_to_i - road_bearing_i))
+headwind_i = -tailwind_i
 ```
 
-Aggregate using section distance and optional exposure/grade weights:
+Apply exposure to reduce the effective wind on sheltered sections:
 
 ```text
-effective_tailwind = sum(tailwind_i * weight_i) / sum(weight_i)
+tailwind_i = tailwind_i * exposure_i
+crosswind_i = crosswind_i * exposure_i
 ```
 
-Tests must cover cardinal directions, wraparound at 0/360 degrees, curved routes,
-missing points, units, and meteorological direction conventions.
+### Section speed
 
-### MVP opportunity score
-
-Use transparent normalized components:
+Solve a constant-power model for ground speed on each section:
 
 ```text
-score =
-    wind_benefit
-  + temperature_benefit
-  + readiness_benefit
-  + forecast_confidence
-  - precipitation_penalty
-  - gust_penalty
-  - fatigue_penalty
-  - uncertainty_penalty
+v_air_i     = v_i + headwind_i
+drag_i      = 0.5 * rho * CdA * v_air_i * abs(v_air_i)
+rolling_i   = Crr * m * g * cos(atan(grade_i))
+gravity_i   = m * g * sin(atan(grade_i))
+power_i(v_i) = v_i * (drag_i + rolling_i + gravity_i) / drivetrain_efficiency
 ```
 
-Hard gates can reject a window before scoring, for example excessive gusts,
-lightning risk, or insufficient forecast coverage.
+Find `v_i` such that `power_i(v_i) = power_available`. The left side is monotonic
+in `v_i`, so bisection converges reliably and needs no closed-form cubic solution.
+
+Two details that unit tests must pin:
+
+- `v_air * abs(v_air)` preserves sign, so a tailwind stronger than ground speed
+  correctly becomes a forward push rather than a drag penalty.
+- Air density is a function of temperature, pressure, and humidity. Temperature
+  therefore enters the time model here, not as an additive score term.
+
+Rider readiness enters the same way, as an adjustment to `power_available`
+derived from recent training load. Fatigue is a power input, not a score penalty.
+
+### Segment time estimate
+
+```text
+t_i = d_i / v_i
+predicted_time = sum(t_i)
+```
+
+Aggregate in time, never in wind. Drag is quadratic in air speed, so a headwind
+costs more time than an equal tailwind returns. A distance-weighted mean tailwind
+collapses that asymmetry and is approximately zero for any out-and-back or loop
+regardless of wind speed, which is exactly the case route-aware analysis exists to
+handle.
+
+Reference values for 10 km, flat, 250 W, 80 kg, CdA 0.32, Crr 0.005, air density
+1.225 kg/m3, and drivetrain efficiency 1.0:
+
+| Window | Mean tailwind | Modelled time | vs calm |
+|---|---|---|---|
+| Calm | 0.0 m/s | 16.29 min | — |
+| 8 m/s, out-and-back | 0.0 m/s | 19.29 min | +18.4% |
+| 12 m/s, out-and-back | 0.0 m/s | 23.31 min | +43.1% |
+| 8 m/s, four-sided loop | 0.0 m/s | 17.79 min | +9.2% |
+| 8 m/s, point-to-point tailwind | +8.0 m/s | 10.55 min | -35.2% |
+
+The first four rows are indistinguishable under mean-tailwind aggregation and
+differ by up to seven minutes in reality. They are committed as golden fixtures.
+
+### Reported wind summary
+
+A single scalar remains useful for SMS copy and dashboard labels:
+
+```text
+effective_tailwind = sum(tailwind_i * d_i) / sum(d_i)
+```
+
+This value is presentational only. It must not be an input to prediction,
+scoring, or alert eligibility, and the contract marks it as such.
+
+### Hard gates
+
+Gates are evaluated before scoring. Any failure rejects the window and records
+the failing gate in the evidence snapshot.
+
+- Sustained wind or gust above the handling threshold.
+- Lightning probability above threshold.
+- Forecast coverage below the minimum fraction of sections with valid data.
+- Forecast age beyond the maximum staleness allowed for the window.
+- Window falling inside rider quiet hours or outside required daylight.
+- Provider-reported ice or standing water where available.
+
+### Opportunity score
+
+The prediction produces a time distribution, not a point estimate. Score from
+that distribution and the rider's target:
+
+```text
+p_beat = P(predicted_time < target_time)
+margin = clamp((target_time - median_time) / (target_time * margin_scale), 0, 1)
+
+score = w_beat    * p_beat
+      + w_margin  * margin
+      - w_precip  * precipitation_penalty
+      - w_gust    * gust_penalty
+      - w_comfort * comfort_penalty
+
+score = clamp(score, 0, 1)
+```
+
+| Term | Meaning | Range | Starting weight |
+|---|---|---|---|
+| `p_beat` | Probability of beating the target | 0-1 | 0.70 |
+| `margin` | How far under target the median falls | 0-1 | 0.30 |
+| `precipitation_penalty` | Rain or snow intensity | 0-1 | 0.25 |
+| `gust_penalty` | Gust spread above sustained wind | 0-1 | 0.20 |
+| `comfort_penalty` | Heat, cold, or low visibility | 0-1 | 0.15 |
+
+Benefit weights sum to 1.0. Penalties are subtractive and the result is clamped,
+so the score stays comparable across riders and segments. Weights are versioned
+configuration, not constants in code, and the active version is written into
+every evidence snapshot so past decisions remain explicable.
+
+Alert eligibility is a threshold on `p_beat`, not on `score`. The score orders the
+dashboard; the probability authorizes an SMS. Keeping these separate means tuning
+presentation never silently changes who gets texted.
+
+### Uncertainty
+
+Interval width comes from forecast spread, model residual variance, and effort
+variance for the rider on that segment. Widening the interval reduces `p_beat`
+automatically, which is the only channel through which confidence affects
+outcomes.
+
+Where multiple forecast issuances cover the same window, disagreement between
+them is a direct uncertainty signal and is preferred over a provider-reported
+confidence value.
 
 ### Prediction evolution
 
-1. Baseline heuristic calibrated on historical efforts.
-2. Regularized regression with time-aware cross-validation.
+1. Baseline physics model calibrated against historical efforts to fit per-rider
+   `CdA`, `Crr`, and sustainable power.
+2. Regularized regression on the physics model residual with time-aware
+   cross-validation.
 3. Quantile regression for predicted time intervals.
 4. Per-rider calibration only after sufficient data exists.
 5. Optional SageMaker training only if the dataset and portfolio value justify the
    cost; local/CI training and Lambda inference are preferred initially.
 
-Metrics include MAE, interval coverage, calibration error, false-alert rate, PB
-precision, and opportunity recall.
+Learned stages predict the residual rather than replacing the physics model, so
+the system degrades to a defensible estimate when a rider has little history.
+
+### Metrics
+
+Prediction quality is measured by backtesting against historical efforts, where
+sample sizes are adequate:
+
+- Mean absolute error against actual elapsed time.
+- Prediction interval coverage against nominal level.
+- Calibration error of `p_beat` in probability bins.
+- Improvement over a naive still-air baseline.
+
+Alert quality is measured operationally. With a single rider these are counters
+and review items, not statistics, and must not be reported as rates until the
+sample supports it:
+
+- Alerts sent, attempted, and converted to a target-beating effort.
+- Alerts suppressed by each gate, cooldown, and quiet-hours rule.
+- Windows where the forecast materially changed after the alert was sent.
+
+### Required tests
+
+- Cardinal directions and wraparound at 0/360 degrees.
+- Meteorological direction convention, verified against a known-good case.
+- Curved routes, out-and-back routes, and closed loops.
+- Tailwind exceeding ground speed.
+- Zero-length and single-point sections, and missing forecast points.
+- Unit consistency across m/s, km/h, and mph at every boundary.
+- Gradient sign on climbs and descents.
+- The golden fixture table above, asserted end to end.
+- Gate precedence, ensuring a failing gate rejects before scoring runs.
+- Score monotonicity: increasing `p_beat` with all else fixed must not lower the
+  score.
 
 ## 10. MCP design
 
@@ -435,13 +611,34 @@ update_alert_preferences
 
 ### Conventional tests
 
-- Unit tests for bearings, wind components, scoring, quiet hours, deduplication, and
-  message segmentation.
+- Unit tests for quiet hours, deduplication, cooldown, and message segmentation.
+- The geometry, wind, speed, gate, and scoring cases enumerated in section 9 under
+  "Required tests", including the golden fixture table. Section 9 owns that list;
+  it is not restated here so the two cannot drift apart.
 - Contract tests for Strava, weather, MCP, events, and API schemas.
 - Integration tests using recorded/sanitized provider responses.
 - Terraform formatting, validation, linting, security scanning, and plan checks.
 - Playwright tests for public demo, OAuth boundaries using mocks, dashboard, SMS
   preview, and mobile deep links.
+
+### Prediction evaluation
+
+Section 9 defines the metrics and draws the line between backtested prediction
+quality and operational alert counters. This section defines how they are run.
+
+- A backtest harness replays stored forecast-versus-actual pairs against a named
+  model version and emits the section 9 prediction metrics.
+- Cross-validation is time-aware. Splits never let a later effort inform an
+  earlier prediction, because a rider's fitness trends over a season.
+- Every run records the model version, weight configuration version, and dataset
+  hash, so a reported number can be traced to what produced it.
+- CI runs the backtest on the committed fixture dataset and fails on regression
+  against a recorded baseline. Full-history runs are manual.
+- A naive still-air prediction is retained as the control. A learned model that
+  does not beat it is not shipped.
+- Operational alert counters are reviewed, not gated. With a single rider the
+  sample cannot support a false-alert rate, and treating it as one would tune the
+  system on noise.
 
 ### AI evaluations
 
