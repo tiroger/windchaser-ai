@@ -59,8 +59,8 @@ docs/                           Architecture and delivery documentation
 
 ## Relationship to `my-strava`
 
-The existing `/Users/rogerlefort/personal/my-strava` project is a reference and
-data source, not a code dependency. Historical ride data and proven cycling
+The existing [`my-strava`](https://github.com/tiroger/my-strava) project is a
+reference and data source, not a code dependency. Historical ride data and proven cycling
 calculations may be migrated through explicit, tested adapters. The old repository
 will not be modified by this project.
 

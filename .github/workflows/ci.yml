@@ -60,7 +60,7 @@ jobs:
           terraform init -backend=false
           terraform validate
 
-  application-quality:
+  python-quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -78,5 +78,69 @@ jobs:
       - name: Verify Python environment
         run: uv run python --version
 
-      - name: Application checks
-        run: echo "Add uv-run lint, type-check, and test commands with the first Python package."
+      - name: Compile the analytics package and scripts
+        run: |
+          uv run python -m compileall -q packages/cycling-analytics scripts
+
+      - name: Physics parity with the TypeScript implementation
+        run: |
+          uv run python - <<'PY'
+          import sys
+          sys.path.insert(0, "packages/cycling-analytics")
+          from cycling_analytics.physics import (
+              Rider, Section, ride_time, wind_at_rider_height,
+          )
+
+          # The section 9 golden fixtures, same reference parameters as the
+          # TypeScript suite. Both implementations must agree or predictions
+          # diverge between the web app and the Lambda workers.
+          rider = Rider(power_w=250, mass_kg=80, cda=0.32, crr=0.005,
+                        drivetrain_efficiency=1.0)
+          cases = [
+              ("calm", [(5000, 90), (5000, 270)], 0.0, 16.29),
+              ("8 m/s out-and-back", [(5000, 90), (5000, 270)], 8.0, 19.29),
+              ("12 m/s out-and-back", [(5000, 90), (5000, 270)], 12.0, 23.31),
+              ("8 m/s point-to-point", [(10000, 90)], 8.0, 10.55),
+          ]
+          # The fixtures state wind at riding height, while ride_time expects a
+          # 10 m forecast wind and scales it down. Invert with the function
+          # itself rather than a hand-copied constant.
+          factor = wind_at_rider_height(1.0)
+          for name, legs, wind, expected in cases:
+              sections = [Section(d, b, 0.0) for d, b in legs]
+              # Wind from 270 travels toward 90, along the outbound leg.
+              got = ride_time(sections, rider, 1.225, 270.0, wind / factor) / 60
+              assert abs(got - expected) < 0.05, f"{name}: {got:.2f} != {expected}"
+              print(f"  {name}: {got:.2f} min")
+          print("physics parity OK")
+          PY
+
+  web-quality:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use the Node version pinned in .node-version
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build
