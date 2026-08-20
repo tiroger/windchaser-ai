@@ -251,6 +251,27 @@ export default function Page() {
       .finally(() => setBriefingLoading(false));
   }, [briefingKey, bundle, ranked, regionName, timezone, blockedCount]);
 
+  /**
+   * Selecting a segment means going to its best window, wherever it was
+   * selected from.
+   *
+   * The rail did this and the map did not, so the same act meant two different
+   * things depending on where it happened. The rule lives here rather than in
+   * each surface, because a rule stated twice is a rule that eventually differs
+   * in one of them -- which is exactly how this started.
+   *
+   * The scrubber's return-to-now undoes it in one click.
+   */
+  const selectSegment = useCallback(
+    (id: number | null) => {
+      setSelectedId(id);
+      if (id === null) return;
+      const best = ranked.find((row) => row.segment.id === id);
+      if (best) setHourOverride(best.hourIndex);
+    },
+    [ranked],
+  );
+
   const selectedSegment = segments.find((s) => s.id === selectedId) ?? null;
   const selectedEvaluation = selectedId ? currentEvaluations.get(selectedId) : null;
   const currentWind = (() => {
@@ -373,8 +394,7 @@ export default function Page() {
           <OpportunityRail
             rows={ranked}
             selectedId={selectedId}
-            onSelect={setSelectedId}
-            onJumpToHour={setHourOverride}
+            onSelect={selectSegment}
           />
         </aside>
 
@@ -383,7 +403,7 @@ export default function Page() {
             segments={segments}
             evaluations={currentEvaluations}
             selectedId={selectedId}
-            onSelect={setSelectedId}
+            onSelect={selectSegment}
             here={located.at}
             wind={currentWind}
             theme={theme}

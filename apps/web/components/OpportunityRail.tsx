@@ -24,12 +24,15 @@ export default function OpportunityRail({
   rows,
   selectedId,
   onSelect,
-  onJumpToHour,
 }: {
   rows: RankedRow[];
   selectedId: number | null;
+  /**
+   * Selecting also moves the scrubber to this segment's best window. That is
+   * the caller's job, not this list's: the map selects segments too, and the
+   * two behaved differently while each owned the rule.
+   */
   onSelect: (id: number) => void;
-  onJumpToHour: (hour: number) => void;
 }) {
   const list = useRef<HTMLDivElement | null>(null);
   const cards = useRef(new Map<number, HTMLButtonElement>());
@@ -98,10 +101,7 @@ export default function OpportunityRail({
             }}
             className="card"
             aria-pressed={row.segment.id === selectedId}
-            onClick={() => {
-              onSelect(row.segment.id);
-              onJumpToHour(row.hourIndex);
-            }}
+            onClick={() => onSelect(row.segment.id)}
           >
             <span className="card-title">
               <span
