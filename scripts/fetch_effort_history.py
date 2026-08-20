@@ -174,12 +174,6 @@ def main() -> None:
         action="store_true",
         help="Skip elevation streams to halve the Strava request count.",
     )
-    parser.add_argument(
-        "--min-efforts",
-        type=int,
-        default=3,
-        help="Ignore segments with fewer recorded efforts (default 3).",
-    )
     args = parser.parse_args()
 
     if not BUNDLE.exists():
@@ -188,12 +182,15 @@ def main() -> None:
             "Run scripts/fetch_strava_fixtures.py first."
         )
     bundle = json.loads(BUNDLE.read_text())
+    # Any segment this athlete has ridden. Restricting to starred ones missed
+    # segments discovery had surfaced that they ride constantly -- one with 59
+    # recorded efforts, more history than the best-calibrated starred segment.
     segments = {
         s["id"]: s
         for s in bundle["segments"]
-        if s.get("source") == "starred" and (s.get("effort_count_personal") or 0) > 0
+        if (s.get("effort_count_personal") or 0) > 0
     }
-    print(f"{len(segments)} starred segments with recorded efforts")
+    print(f"{len(segments)} segments with recorded efforts")
 
     env = load_env()
     token = access_token(env)
@@ -242,16 +239,18 @@ def main() -> None:
             "scope, and Strava restricts it for some accounts."
         )
 
-    # Drop segments too sparse to teach the model anything.
+    # Everything fetched is kept. A threshold used to drop segments with only a
+    # couple of efforts, which also dropped the elevation profile fetched for
+    # them a moment earlier -- a Strava call spent and then thrown away, and the
+    # most valuable part of the result: real gradient is worth more to the model
+    # than a sparse segment's efforts are. The thresholds that matter live in
+    # cycling_analytics.calibration, which decides per segment what it has
+    # enough evidence to fit.
     per_segment: dict[int, int] = defaultdict(int)
     for r in records:
         per_segment[r["segment_id"]] += 1
-    records = [r for r in records if per_segment[r["segment_id"]] >= args.min_efforts]
-    kept = {r["segment_id"] for r in records}
-    print(
-        f"\n{len(records)} efforts across {len(kept)} segments "
-        f"(dropped segments with fewer than {args.min_efforts})"
-    )
+    kept = set(segments)
+    print(f"\n{len(records)} efforts across {len(per_segment)} segments")
 
     # ---- weather -----------------------------------------------------------
     cells = {
@@ -260,7 +259,6 @@ def main() -> None:
             s["points"][len(s["points"]) // 2][1],
         )
         for sid, s in segments.items()
-        if sid in kept
     }
 
     needed: dict[tuple[str, int, int], None] = {}
@@ -311,7 +309,7 @@ def main() -> None:
                 "cell_id": segments[sid]["cell_id"],
                 "elevation_profile": profiles.get(sid),
             }
-            for sid in sorted(kept)
+            for sid in sorted(segments)
         },
         "efforts": labelled,
     }
