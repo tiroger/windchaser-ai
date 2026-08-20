@@ -4,48 +4,6 @@
 # static platform would drop them, and with them the Strava credentials that
 # must stay off the browser.
 
-locals {
-  # Amplify builds from the repository root, so the monorepo path is declared
-  # here and every command runs relative to it.
-  build_spec = yamlencode({
-    version = 1
-    applications = [{
-      appRoot = var.app_root
-      frontend = {
-        phases = {
-          preBuild = {
-            commands = [
-              # Match the Node version the repository pins, rather than
-              # whatever the build image happens to ship.
-              "nvm install $(cat ../../.node-version)",
-              "nvm use $(cat ../../.node-version)",
-              "node --version",
-              "npm ci",
-            ]
-          }
-          build = {
-            commands = [
-              # prebuild syncs the MapLibre worker into public/, which the map
-              # cannot render without.
-              "npm run build",
-            ]
-          }
-        }
-        artifacts = {
-          baseDirectory = ".next"
-          files         = ["**/*"]
-        }
-        cache = {
-          paths = [
-            "node_modules/**/*",
-            ".next/cache/**/*",
-          ]
-        }
-      }
-    }]
-  })
-}
-
 resource "aws_amplify_app" "web" {
   name        = "windchaser-${var.environment}"
   description = "WindChaser cycling opportunity dashboard (${var.environment})."
@@ -59,7 +17,11 @@ resource "aws_amplify_app" "web" {
   access_token = var.github_access_token
 
   iam_service_role_arn = aws_iam_role.amplify.arn
-  build_spec           = local.build_spec
+
+  # No build_spec here. amplify.yml at the repository root takes precedence and
+  # is reviewable alongside the code it builds. Terraform emitting the same YAML
+  # with quoted keys was parsed only partially by Amplify, which ran the build
+  # phase and skipped preBuild entirely.
 
   environment_variables = {
     # Tells Amplify which application in the monorepo this app builds.

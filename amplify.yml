@@ -1,0 +1,33 @@
+# Amplify build specification.
+#
+# Lives in the repository rather than in Terraform. A file here takes precedence
+# over the app-level spec, is reviewable in a pull request alongside the code it
+# builds, and avoids Terraform's yamlencode emitting quoted keys, which Amplify's
+# parser handled inconsistently: it accepted the build phase and silently skipped
+# preBuild, so nothing was ever installed.
+version: 1
+applications:
+  - appRoot: apps/web
+    frontend:
+      phases:
+        preBuild:
+          commands:
+            # Match the Node version the repository pins rather than whatever
+            # the build image ships with.
+            - nvm install $(cat ../../.node-version)
+            - nvm use $(cat ../../.node-version)
+            - node --version
+            - npm ci
+        build:
+          commands:
+            # prebuild syncs the MapLibre worker into public/, without which the
+            # map renders an empty canvas.
+            - npm run build
+      artifacts:
+        baseDirectory: .next
+        files:
+          - '**/*'
+      cache:
+        paths:
+          - node_modules/**/*
+          - .next/cache/**/*
