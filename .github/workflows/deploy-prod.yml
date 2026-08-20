@@ -24,6 +24,9 @@ jobs:
     env:
       TF_IN_AUTOMATION: "true"
       TF_INPUT: "false"
+      # Kept out of the repository, which is public. Unset simply means the
+      # alert topic is created without a subscriber.
+      TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
     steps:
       - uses: actions/checkout@v4
 
