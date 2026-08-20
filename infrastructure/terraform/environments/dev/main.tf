@@ -12,7 +12,13 @@ locals {
   # then fails, and a failed association must be deleted before another can be
   # created. Recorded here rather than as a CI variable so that plan and apply
   # cannot disagree about it.
-  domain_delegated = false
+  #
+  # Delegation confirmed on 2026-08-20 at 19:48Z, and DNSSEC validation passing
+  # at 19:58Z once the orphaned DS the registrar had left at the .io registry
+  # aged out of resolver caches. Verified over DNS-over-HTTPS against both
+  # Google and Cloudflare, because this network intercepts port 53 and answers
+  # every query from its own cache regardless of the server asked.
+  domain_delegated = true
 }
 
 module "observability" {
