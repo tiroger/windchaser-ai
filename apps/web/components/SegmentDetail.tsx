@@ -22,7 +22,7 @@ export default function SegmentDetail({
       <div className="panel">
         <h3>{segment.name}</h3>
         {gated && (
-          <div className="gate-note" role="status">
+          <div className="notice" role="status">
             <strong>Window rejected.</strong>
             <span>
               {evaluation.gates.map((g) => g.detail).join(" · ")}. Scoring is
@@ -37,9 +37,7 @@ export default function SegmentDetail({
           >
             {formatDuration(evaluation.predicted_time_s)}
           </span>
-          <span style={{ color: "var(--ink-2)", fontSize: "0.85rem" }}>
-            predicted
-          </span>
+          <span className="unit">predicted</span>
         </div>
         <div className="stat-row">
           <span className="k">{prIsMoving ? "Best moving time" : "Your PR"}</span>
@@ -153,16 +151,12 @@ export default function SegmentDetail({
         {bars.map((b) => {
           const magnitude = Math.min(1, Math.abs(b.contribution) / 0.7);
           return (
-            <div key={b.key} style={{ marginBottom: "0.55rem" }}>
+            <div key={b.key} className="bar-group">
               <div className="bar-row">
                 <span className="bar-label">{b.label}</span>
                 <span
-                  className="mono"
-                  style={{
-                    fontSize: "0.75rem",
-                    textAlign: "right",
-                    color: b.positive ? "var(--open)" : "var(--ink-2)",
-                  }}
+                  className="bar-value"
+                  style={{ color: b.positive ? "var(--open)" : "var(--ink-3)" }}
                 >
                   {b.contribution >= 0 ? "+" : "−"}
                   {Math.abs(b.contribution).toFixed(2)}
@@ -173,7 +167,6 @@ export default function SegmentDetail({
                   className="bar-fill"
                   style={{
                     width: `${magnitude * 100}%`,
-                    left: 0,
                     background: b.positive
                       ? "var(--data-open)"
                       : "var(--data-effort)",
@@ -183,30 +176,16 @@ export default function SegmentDetail({
             </div>
           );
         })}
-        <p
-          style={{
-            color: "var(--ink-3)",
-            fontSize: "0.72rem",
-            marginTop: "0.7rem",
-            marginBottom: 0,
-          }}
-        >
+        <p className="footnote">
           Forecast uncertainty is not a term here. It widens the predicted
-          interval, which lowers the chance of beating your PR.
+          interval, which lowers the chance of beating your target.
         </p>
       </div>
 
       <div className="panel">
         <h3>Wind along the route</h3>
         <SectionStrip evaluation={evaluation} />
-        <p
-          style={{
-            color: "var(--ink-3)",
-            fontSize: "0.72rem",
-            marginTop: "0.6rem",
-            marginBottom: 0,
-          }}
-        >
+        <p className="footnote">
           {evaluation.sections.length} sections, each scored on its own bearing
           {segment.elevation_profile ? " and gradient" : ""}. Times are summed,
           never averaged as wind.
@@ -258,10 +237,10 @@ function SectionStrip({ evaluation }: { evaluation: Evaluation }) {
           />
         );
       })}
-      <text x="0.5" y="6" fontSize="3.4" fill="var(--ink-3)" fontFamily="var(--font-mono), monospace">
+      <text x="0.5" y="6" fontSize="3.2" fill="var(--ink-3)" fontFamily="var(--font-mono), monospace">
         tailwind
       </text>
-      <text x="0.5" y="38" fontSize="3.4" fill="var(--ink-3)" fontFamily="var(--font-mono), monospace">
+      <text x="0.5" y="38" fontSize="3.2" fill="var(--ink-3)" fontFamily="var(--font-mono), monospace">
         headwind
       </text>
     </svg>

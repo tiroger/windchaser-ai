@@ -15,10 +15,20 @@ import { useEffect, useMemo, useRef } from "react";
 
 import WindCanvas from "@/components/WindCanvas";
 import { compassLabel, formatDuration } from "@/lib/geo";
+import type { Theme } from "@/components/ThemeToggle";
 import type { Evaluation, LatLon, Segment } from "@/lib/types";
 
-/** CARTO dark basemap: MapLibre-native vector tiles, no API key required. */
-const STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
+/** CARTO basemaps: MapLibre-native vector tiles, no API key required. */
+const STYLES = {
+  dark: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
+  light: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+} as const;
+
+/** Line colours per theme, matching the validated token palette. */
+const RAMP = {
+  dark: { open: "#1FAE72", mid: "#3B87CC", low: "#3E5F7E", gated: "#6B727C" },
+  light: { open: "#128857", mid: "#2F6FA9", low: "#7C93A8", gated: "#A8ADB5" },
+} as const;
 
 /**
  * MapLibre fetches and parses vector tiles inside a Web Worker. Turbopack does
@@ -49,15 +59,15 @@ interface Props {
   onSelect: (id: number) => void;
   here: LatLon | null;
   wind: { speed: number; fromDeg: number; gust?: number } | null;
+  theme: Theme;
 }
 
-function scoreColor(score: number, gated: boolean): string {
-  if (gated) return "#6B7480";
-  // Single-hue ramp from muted wind blue up to the open-window green.
-  if (score >= 0.62) return "#1FAE72";
-  if (score >= 0.45) return "#4FA88C";
-  if (score >= 0.28) return "#3B87CC";
-  return "#3E5F7E";
+function scoreColor(score: number, gated: boolean, theme: Theme): string {
+  const ramp = RAMP[theme];
+  if (gated) return ramp.gated;
+  if (score >= 0.62) return ramp.open;
+  if (score >= 0.42) return ramp.mid;
+  return ramp.low;
 }
 
 export default function SegmentMap({
@@ -67,6 +77,7 @@ export default function SegmentMap({
   onSelect,
   here,
   wind,
+  theme,
 }: Props) {
   const holder = useRef<HTMLDivElement | null>(null);
   const map = useRef<MapLibreMap | null>(null);
@@ -78,6 +89,7 @@ export default function SegmentMap({
   // The load handler fires after data has usually arrived, so it must read the
   // latest features rather than the empty set captured when the map was built.
   const geojsonRef = useRef<GeoJson | null>(null);
+  const themeRef = useRef<Theme>(theme);
 
   const geojson = useMemo(() => {
     return {
@@ -92,7 +104,7 @@ export default function SegmentMap({
             id: s.id,
             name: s.name,
             score: ev?.score ?? 0,
-            colour: scoreColor(ev?.score ?? 0, gated),
+            colour: scoreColor(ev?.score ?? 0, gated, theme),
             selected: s.id === selectedId ? 1 : 0,
             predicted: ev ? formatDuration(ev.predicted_time_s) : "—",
             pr: s.pr_elapsed_time ? formatDuration(s.pr_elapsed_time) : "no PR",
@@ -105,14 +117,14 @@ export default function SegmentMap({
         };
       }),
     };
-  }, [segments, evaluations, selectedId]);
+  }, [segments, evaluations, selectedId, theme]);
 
   // Create the map once.
   useEffect(() => {
     if (!holder.current || map.current) return;
     const instance = new MapLibreMap({
       container: holder.current,
-      style: STYLE,
+      style: STYLES[themeRef.current],
       center: [-73.9, 41],
       zoom: 10,
       attributionControl: { compact: true },
@@ -124,7 +136,8 @@ export default function SegmentMap({
       console.error("[map]", e.error?.message ?? e);
     });
 
-    instance.on("load", () => {
+    const addLayers = () => {
+      if (instance.getSource("segments")) return;
       instance.addSource("segments", {
         type: "geojson",
         data: geojsonRef.current ?? geojson,
@@ -170,7 +183,7 @@ export default function SegmentMap({
           .setLngLat(e.lngLat)
           .setHTML(
             `<strong style="font-size:13px">${p.name}</strong><br>` +
-              `<span style="font-family:var(--font-mono),monospace;font-size:11px;color:#A6AEBA">` +
+              `<span style="font-family:var(--font-mono),monospace;font-size:11px;color:var(--ink-2)">` +
               `${p.predicted} predicted · PR ${p.pr}</span>`,
           )
           .addTo(instance);
@@ -185,9 +198,24 @@ export default function SegmentMap({
       });
 
       ready.current = true;
-      // Signals to tests (and to diagnosis) that style + layers are live.
+      // Signals to tests that style and layers are live, and how many segment
+      // features the source is actually carrying. The theme toggle replaces the
+      // whole style, so this is what proves the layers came back.
       holder.current?.setAttribute("data-map-ready", "true");
+      holder.current?.setAttribute(
+        "data-map-segments",
+        String((geojsonRef.current ?? geojson).features.length),
+      );
+    };
+
+    instance.on("load", () => {
+      addLayers();
       fitTo(instance, geojsonRef.current ?? geojson);
+    });
+
+    // setStyle replaces the whole style, taking our layers with it.
+    instance.on("styledata", () => {
+      if (instance.isStyleLoaded()) addLayers();
     });
 
     return () => {
@@ -199,13 +227,27 @@ export default function SegmentMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Swap the basemap when the theme changes; layers are re-added on styledata.
+  useEffect(() => {
+    themeRef.current = theme;
+    const instance = map.current;
+    if (!instance || !ready.current) return;
+    instance.setStyle(STYLES[theme]);
+  }, [theme]);
+
   // Push data updates.
   useEffect(() => {
     geojsonRef.current = geojson;
     const instance = map.current;
     if (!instance || !ready.current) return;
     const source = instance.getSource("segments") as GeoJSONSource | undefined;
-    if (source) source.setData(geojson);
+    if (source) {
+      source.setData(geojson);
+      holder.current?.setAttribute(
+        "data-map-segments",
+        String(geojson.features.length),
+      );
+    }
   }, [geojson]);
 
   // Refit when the visible set changes region.
@@ -223,8 +265,8 @@ export default function SegmentMap({
     if (!instance || !here) return;
     const el = document.createElement("div");
     el.style.cssText =
-      "width:12px;height:12px;border-radius:50%;background:#FF7A2F;" +
-      "box-shadow:0 0 0 4px rgba(255,122,47,0.25);border:1.5px solid #101317";
+      "width:12px;height:12px;border-radius:50%;background:var(--accent);" +
+      "box-shadow:0 0 0 4px var(--accent-wash);border:2px solid var(--surface)";
     el.setAttribute("aria-label", "Your position");
     const marker = new Marker({ element: el })
       .setLngLat([here[1], here[0]])
@@ -240,24 +282,29 @@ export default function SegmentMap({
     <div className="map-wrap">
       <div ref={holder} style={{ position: "absolute", inset: 0 }} />
       {windTo !== null && wind && (
-        <WindCanvas speed={wind.speed} travelDeg={windTo} gust={wind.gust} />
+        <WindCanvas
+          speed={wind.speed}
+          travelDeg={windTo}
+          gust={wind.gust}
+          theme={theme}
+        />
       )}
       <div className="map-overlay">
         <div className="legend">
           <div className="legend-row">
-            <span className="legend-swatch" style={{ background: "#1FAE72" }} />
+            <span className="legend-swatch" style={{ background: "var(--data-open)" }} />
             <span>Window open</span>
           </div>
           <div className="legend-row">
-            <span className="legend-swatch" style={{ background: "#3B87CC" }} />
+            <span className="legend-swatch" style={{ background: "var(--data-wind)" }} />
             <span>Marginal</span>
           </div>
           <div className="legend-row">
-            <span className="legend-swatch" style={{ background: "#6B7480" }} />
+            <span className="legend-swatch" style={{ background: "var(--ink-3)" }} />
             <span>Blocked by a gate</span>
           </div>
           {wind && (
-            <div className="legend-row" style={{ marginTop: "0.5rem", color: "#6B7480" }}>
+            <div className="legend-note">
               Wind {wind.speed.toFixed(1)} m/s from {compassLabel(wind.fromDeg)}
             </div>
           )}
@@ -299,7 +346,7 @@ function Compass({ fromDeg }: { fromDeg: number }) {
             transform={`rotate(${i * 90})`}
             textAnchor="middle"
             fontSize="6.5"
-            fill="#6B7480"
+            fill="var(--ink-3)"
             fontFamily="var(--font-mono), monospace"
           >
             {label}
@@ -308,7 +355,7 @@ function Compass({ fromDeg }: { fromDeg: number }) {
         <g transform={`rotate(${travel})`}>
           <path
             d="M0,-12 L3.6,7 L0,4 L-3.6,7 Z"
-            fill="#58A6E8"
+            fill="var(--wind)"
           />
         </g>
       </svg>

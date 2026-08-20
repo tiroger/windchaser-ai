@@ -2,6 +2,8 @@
 
 import { useEffect, useRef } from "react";
 
+import type { Theme } from "@/components/ThemeToggle";
+
 /**
  * Animated wind field drawn over the map.
  *
@@ -21,6 +23,8 @@ interface Props {
   travelDeg: number;
   /** Gust headroom above sustained, used to add turbulence. */
   gust?: number;
+  /** Particles must carry against the basemap, which differs per theme. */
+  theme: Theme;
 }
 
 interface Particle {
@@ -34,7 +38,18 @@ interface Particle {
 
 const BASE_COUNT = 340;
 
-export default function WindCanvas({ speed, travelDeg, gust = 0 }: Props) {
+/** Streak colour per theme: a pale blue vanishes on the light basemap. */
+const STREAK = {
+  dark: { r: 120, g: 190, b: 245, base: 0.1, gain: 0.42 },
+  light: { r: 30, g: 96, b: 160, base: 0.09, gain: 0.34 },
+} as const;
+
+export default function WindCanvas({
+  speed,
+  travelDeg,
+  gust = 0,
+  theme,
+}: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   // The animation loop eases toward these targets. Written after render, not
   // during it, so React never sees a ref mutate mid-render.
@@ -42,6 +57,11 @@ export default function WindCanvas({ speed, travelDeg, gust = 0 }: Props) {
   useEffect(() => {
     target.current = { speed, travelDeg, gust };
   }, [speed, travelDeg, gust]);
+
+  const tone = useRef(STREAK[theme]);
+  useEffect(() => {
+    tone.current = STREAK[theme];
+  }, [theme]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -103,7 +123,8 @@ export default function WindCanvas({ speed, travelDeg, gust = 0 }: Props) {
       const rad = ((curDir - 90) * Math.PI) / 180;
       const cols = 10;
       const rows = 6;
-      ctx.strokeStyle = "rgba(88,166,232,0.30)";
+      const t = tone.current;
+      ctx.strokeStyle = `rgba(${t.r},${t.g},${t.b},0.34)`;
       ctx.lineWidth = 1.1;
       ctx.lineCap = "round";
       for (let r = 0; r < rows; r++) {
@@ -147,7 +168,10 @@ export default function WindCanvas({ speed, travelDeg, gust = 0 }: Props) {
         p.age++;
 
         const fade = 1 - p.age / p.life;
-        ctx.strokeStyle = `rgba(120,190,245,${(0.10 + 0.42 * p.weight) * fade})`;
+        const t = tone.current;
+        ctx.strokeStyle = `rgba(${t.r},${t.g},${t.b},${
+          (t.base + t.gain * p.weight) * fade
+        })`;
         ctx.lineWidth = 0.6 + p.weight * 1.5;
         ctx.beginPath();
         ctx.moveTo(px, py);

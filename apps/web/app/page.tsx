@@ -7,6 +7,7 @@ import OpportunityRail, { type RankedRow } from "@/components/OpportunityRail";
 import Scrubber from "@/components/Scrubber";
 import SegmentDetail from "@/components/SegmentDetail";
 import SegmentMap from "@/components/SegmentMap";
+import ThemeToggle, { useTheme } from "@/components/ThemeToggle";
 import { haversineM } from "@/lib/geo";
 import { evaluate } from "@/lib/physics";
 import type { Briefing } from "@/lib/server/briefing";
@@ -23,6 +24,7 @@ export default function Page() {
   const [hourOverride, setHourOverride] = useState<number | null>(null);
   // Captured once at mount: reading the clock during render is impure.
   const [mountedAt] = useState(() => Date.now());
+  const [theme, setTheme] = useTheme();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [briefing, setBriefing] = useState<Briefing | null>(null);
   const [briefingLoading, setBriefingLoading] = useState(false);
@@ -252,17 +254,31 @@ export default function Page() {
     <div className="shell">
       <header className="masthead">
         <div className="wordmark">
+          <svg className="mark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              d="M2 8h11.5a3.2 3.2 0 1 0-3.1-4"
+              stroke="currentColor"
+              strokeWidth="1.9"
+              strokeLinecap="round"
+            />
+            <path
+              d="M2 13h15.4a3.4 3.4 0 1 1-3.3 4.3"
+              stroke="currentColor"
+              strokeWidth="1.9"
+              strokeLinecap="round"
+              opacity="0.55"
+            />
+          </svg>
           <h1>WindChaser</h1>
-          <span className="tag">segment intelligence</span>
         </div>
 
-        <div className="region-select" role="group" aria-label="Riding region">
+        <div className="chip-row" role="group" aria-label="Riding region">
           {bundle.regions
             .filter((r) => r.starred_count > 0 || r.id === "here")
             .map((r) => (
               <button
                 key={r.id}
-                className="region-chip"
+                className="chip"
                 aria-pressed={r.id === regionId}
                 onClick={() => {
                   setRegionOverride(r.id);
@@ -278,23 +294,20 @@ export default function Page() {
 
         <span className="masthead-spacer" />
 
-        <span className={`pill ${bundle.live ? "is-live" : "is-saved"}`}>
+        <span className={`status ${bundle.live ? "is-live" : "is-saved"}`}>
           <span className="dot" />
-          {bundle.live ? "Live Strava + forecast" : "Saved bundle"}
+          {bundle.live ? "Live data" : "Saved bundle"}
         </span>
-        {located.status === "granted" && (
-          <span className="pill">
-            <span className="dot" style={{ background: "var(--accent)" }} />
-            Located
-          </span>
-        )}
+        <ThemeToggle theme={theme} onChange={setTheme} />
       </header>
 
       <div className="workspace">
         <aside className="rail">
           <div className="rail-head">
-            <span className="eyebrow">Ranked by chance of a PB</span>
             <h2>{regionName}</h2>
+            <span className="label">
+              {ranked.length} segments, ranked by chance of a personal best
+            </span>
           </div>
           <BriefingPanel briefing={briefing} loading={briefingLoading} />
           <OpportunityRail
@@ -313,6 +326,7 @@ export default function Page() {
             onSelect={setSelectedId}
             here={located.at}
             wind={currentWind}
+            theme={theme}
           />
           <Scrubber
             times={times}

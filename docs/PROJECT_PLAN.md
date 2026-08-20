@@ -154,11 +154,21 @@ not make paid inference or third-party API calls on every visit.
 
 ### Visual direction
 
-- Dark charcoal base, warm orange primary accent, electric green opportunity
-  accent, and blue wind/weather layers.
-- Map-first layouts and editorial typography.
+- Light and dark are both designed, not inverted, and follow the reader's system
+  preference unless they choose otherwise. The basemap swaps with the theme.
+- Three accent roles, each meaning one thing: warm orange for the rider and
+  their effort, green for an open window, blue for wind and weather.
+- Data colours are validated per theme for OKLCH lightness band, chroma
+  floor, colour-vision separation, and contrast against that theme's surface.
+  `scripts/validate_palette.js` in the dataviz skill is the check of record.
+- One typeface superfamily, Geist and Geist Mono, so measured values and the
+  labels beside them read as one system. Every number is tabular.
+- Depth from layered surfaces and restrained shadow rather than a hairline
+  border on every element.
+- Map-first layouts.
 - Restrained animation conveying wind direction, forecast progression, and tool
-  execution.
+  execution. The wind field is advected by the real forecast vector, so the
+  motion carries information rather than decorating.
 - Mobile-first opportunity pages because most authenticated visits originate from
   SMS deep links.
 - WCAG 2.2 AA color contrast, keyboard navigation, reduced-motion support, and

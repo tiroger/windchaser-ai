@@ -2,19 +2,15 @@
 
 import { useMemo } from "react";
 
-/** Sequential ramp: one hue, light to dark, for a magnitude encoding. */
+/**
+ * Sequential ramp: one hue, increasing in strength with the score. Built by
+ * mixing the open-window token into the surface, so it tracks the theme.
+ */
 function heatColour(score: number | null): string {
-  if (score === null) return "var(--surface)";
-  if (score <= 0) return "#232A33";
-  const steps = [
-    "#26333C",
-    "#2A4A4A",
-    "#2E6152",
-    "#2E7B5C",
-    "#249465",
-    "#1FAE72",
-  ];
-  return steps[Math.min(steps.length - 1, Math.floor(score * steps.length))];
+  if (score === null || score <= 0) return "var(--surface-2)";
+  const step = Math.min(5, Math.floor(score * 6));
+  const mix = [12, 26, 42, 60, 80, 100][step];
+  return `color-mix(in srgb, var(--data-open) ${mix}%, var(--surface-2))`;
 }
 
 export default function Scrubber({
@@ -52,7 +48,7 @@ export default function Scrubber({
   return (
     <div className="scrubber">
       <div className="scrubber-head">
-        <span className="eyebrow">Forecast window</span>
+        <span className="label">Forecast window</span>
         <span className="when">
           {current
             ? current.toLocaleString("en-US", {
@@ -63,9 +59,7 @@ export default function Scrubber({
               })
             : "—"}
         </span>
-        <span className="mono" style={{ color: "var(--ink-3)", fontSize: "0.7rem" }}>
-          {timezone}
-        </span>
+        <span className="mono label">{timezone}</span>
       </div>
 
       <div className="scrubber-track">
