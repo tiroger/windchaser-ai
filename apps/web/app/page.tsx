@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import BriefingPanel from "@/components/Briefing";
+import GradientProfile from "@/components/GradientProfile";
 import OpportunityRail, { type RankedRow } from "@/components/OpportunityRail";
 import Scrubber from "@/components/Scrubber";
 import SegmentDetail from "@/components/SegmentDetail";
@@ -387,6 +388,10 @@ export default function Page() {
             wind={currentWind}
             theme={theme}
           />
+          {selectedSegment && (
+            <GradientProfile segment={selectedSegment} theme={theme} />
+          )}
+
           <Scrubber
             times={times}
             scores={scoreCurve}

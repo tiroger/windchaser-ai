@@ -371,6 +371,115 @@ button {
   }
 }
 
+/* -------------------------------------------------------------- profile -- */
+
+.profile {
+  margin: 0;
+  padding: 0.7rem 0.9rem 0.6rem;
+  border-top: 1px solid var(--line-soft);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.profile-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.profile-name {
+  font-size: var(--step--1);
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.profile-stats {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-size: var(--step--2);
+  color: var(--ink-2);
+}
+
+/* Scaled uniformly rather than stretched to a fixed height. Stretching the
+   viewBox would squash the axis labels horizontally along with the geometry,
+   and it would also make the same climb look steeper on a narrow screen than
+   a wide one. */
+.profile-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  touch-action: none;
+}
+
+.profile-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.profile-cursor {
+  stroke: var(--ink-2);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.profile-tick {
+  fill: var(--ink-3);
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  text-anchor: end;
+}
+
+.profile-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.profile-legend {
+  display: flex;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.profile-band {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: var(--step--2);
+  color: var(--ink-3);
+}
+
+.profile-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.profile-readout {
+  font-size: var(--step--2);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.profile-empty {
+  margin: 0;
+  padding: 0.8rem 0.9rem;
+  border-top: 1px solid var(--line-soft);
+  background: var(--surface);
+  font-size: var(--step--2);
+  color: var(--ink-3);
+}
+
 /* ----------------------------------------------------------------- card -- */
 
 .card {
