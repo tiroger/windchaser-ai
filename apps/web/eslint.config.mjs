@@ -1,13 +1,18 @@
+import { dirname } from "path";
+import { fileURLToPath } from "url";
+
+import { FlatCompat } from "@eslint/eslintrc";
 import { defineConfig, globalIgnores } from "eslint/config";
-import nextVitals from "eslint-config-next/core-web-vitals";
-import nextTs from "eslint-config-next/typescript";
+
+// eslint-config-next 15 ships a legacy eslintrc config with no flat-config
+// subpath exports, unlike 16. FlatCompat bridges it.
+const compat = new FlatCompat({
+  baseDirectory: dirname(fileURLToPath(import.meta.url)),
+});
 
 const eslintConfig = defineConfig([
-  ...nextVitals,
-  ...nextTs,
-  // Override default ignores of eslint-config-next.
+  ...compat.extends("next/core-web-vitals", "next/typescript"),
   globalIgnores([
-    // Default ignores of eslint-config-next:
     ".next/**",
     "out/**",
     "build/**",
