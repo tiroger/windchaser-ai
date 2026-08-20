@@ -249,7 +249,6 @@ def main() -> None:
     per_segment: dict[int, int] = defaultdict(int)
     for r in records:
         per_segment[r["segment_id"]] += 1
-    kept = set(segments)
     print(f"\n{len(records)} efforts across {len(per_segment)} segments")
 
     # ---- weather -----------------------------------------------------------
