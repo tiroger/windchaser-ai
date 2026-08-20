@@ -17,6 +17,7 @@ from __future__ import annotations
 import statistics
 import time
 from collections import defaultdict
+from datetime import datetime, timezone
 
 from .physics import Rider, fit_power_from_efforts, to_sections
 from .rider import fit_physics, fit_rider_model, mean_grade
@@ -59,6 +60,22 @@ def downsample(profile: dict | None) -> dict | None:
     }
 
 
+def _age_years(effort: dict, now: datetime) -> float:
+    """How long ago an attempt was, so the fit can discount it.
+
+    Fitness moves, and pooling a decade equally fits the average of who this
+    rider has been rather than who they are now. See rider.HALF_LIFE_YEARS.
+    """
+    stamp = effort.get("start_date")
+    if not stamp:
+        return 0.0
+    try:
+        when = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+    except ValueError:
+        return 0.0
+    return max((now - when.astimezone(timezone.utc)).days / 365.25, 0.0)
+
+
 def _labelled(effort: dict) -> float | None:
     """Moving time, which is what the physics predicts. Elapsed includes stops."""
     value = effort.get("moving_time_s") or effort.get("elapsed_time_s")
@@ -83,6 +100,7 @@ def build_calibration(payload: dict) -> dict:
     # per-segment power fitted against the wrong constants absorbs their error,
     # which stays invisible until the model is asked about a segment it has
     # never seen.
+    now = datetime.now(timezone.utc)
     observations = []
     curve_samples = []
     for sid, efforts in by_segment.items():
@@ -104,7 +122,7 @@ def build_calibration(payload: dict) -> dict:
                 continue
             watts = float(e["average_watts"])
             observations.append((sections, e["weather"], watts, actual))
-            curve_samples.append((actual, grade, watts))
+            curve_samples.append((actual, grade, watts, _age_years(e, now)))
 
     physics = fit_physics(observations)
     rider_curve = fit_rider_model(curve_samples)

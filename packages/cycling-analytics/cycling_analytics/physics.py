@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from datetime import datetime
 
 G = 9.80665
 R_DRY = 287.058
@@ -239,26 +240,58 @@ def fit_power_still_air(
     return (lo + hi) / 2
 
 
+def _age_weights(efforts: list[dict], half_life_years: float | None) -> list[float]:
+    """Discount older attempts, measured back from the newest one on record.
+
+    Relative to the newest rather than to today, so a backtest fitting on a
+    training window weights that window the same way a fit run at its end would.
+    """
+    if not half_life_years or half_life_years <= 0:
+        return [1.0] * len(efforts)
+
+    stamps: list[float] = []
+    for effort in efforts:
+        raw = effort.get("start_date")
+        try:
+            when = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            stamps.append(when.timestamp())
+        except (TypeError, ValueError):
+            stamps.append(0.0)
+    newest = max(stamps) if stamps else 0.0
+    seconds = 365.25 * 24 * 3600
+    return [
+        0.5 ** (max(newest - t, 0.0) / seconds / half_life_years) for t in stamps
+    ]
+
+
 def fit_power_from_efforts(
     sections: list[Section],
     efforts: list[dict],
     base: Rider = Rider(),
+    half_life_years: float | None = None,
 ) -> float:
     """Power minimising squared time error across efforts in their real weather.
 
     Because the efforts span many wind directions and speeds, wind no longer
     correlates with the fitted power, which is the whole point of collecting
     effort history.
+
+    Older attempts can be discounted by a half-life. A segment ridden across
+    several seasons otherwise fits the average of the rider across all of them,
+    and this rider has gained roughly 10 percent on the same climb in four
+    years.
     """
     if not efforts:
         return base.power_w
+
+    weights = _age_weights(efforts, half_life_years)
 
     def cost(power: float) -> float:
         rider = Rider(
             power, base.mass_kg, base.cda, base.crr, base.drivetrain_efficiency
         )
         total = 0.0
-        for e in efforts:
+        for e, age_weight in zip(efforts, weights):
             w = e["weather"]
             rho = air_density(
                 w.get("temperature_c") or 15.0,
@@ -269,7 +302,7 @@ def fit_power_from_efforts(
                 sections, rider, rho, w["wind_from_deg"], w["wind_speed_ms"]
             )
             actual = float(e.get("moving_time_s") or e["elapsed_time_s"])
-            total += (predicted - actual) ** 2
+            total += age_weight * (predicted - actual) ** 2
         return total
 
     # Cost is unimodal in power; ternary search avoids needing a derivative.

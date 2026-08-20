@@ -127,11 +127,47 @@ class RiderModel:
         return power
 
 
-def _solve(rows: list[list[float]], targets: list[float]) -> list[float] | None:
-    """Least squares by normal equations, Gaussian elimination with pivoting."""
+# Attempts are discounted by age, halving every two years.
+#
+# Fitness moves. Across this rider's recorded history the same climb went from
+# 209 W to 232 W, and pooling a decade equally fits the average of who they have
+# been rather than who they are.
+#
+# Leave-one-segment-out cannot measure this. It scores against efforts from
+# every year, so a model tuned to present fitness is penalised for failing to
+# predict the rider of 2015. A rolling-origin split can: fit before a date,
+# predict after it, walk the date forward.
+#
+# The two disagree about how hard to discount, and the choice is theirs jointly:
+#
+#   half-life   transfer MAE / bias      time-forward MAE
+#   none            83.8s   +1.1s            67.9s
+#   2 years         82.1s   -8.8s            63.9s
+#   1 year          83.0s  -14.9s            59.7s
+#   0.5 years       85.5s  -20.5s            53.7s
+#
+# Predicting a future ride keeps improving as the window shortens, but transfer
+# to an unridden segment grows steadily more optimistic, and optimism is the
+# failure this whole calibration exists to remove -- it inflates the chance of
+# beating a personal best precisely where there is least evidence. Two years is
+# the knee: the best transfer error and mean absolute percentage of any setting,
+# most of the bias intact, and still a sixth off the forward error.
+HALF_LIFE_YEARS = 2.0
+
+
+def _solve(
+    rows: list[list[float]], targets: list[float], weights: list[float]
+) -> list[float] | None:
+    """Weighted least squares by normal equations, with partial pivoting."""
     width = len(rows[0])
-    a = [[sum(r[i] * r[j] for r in rows) for j in range(width)] for i in range(width)]
-    b = [sum(r[i] * t for r, t in zip(rows, targets)) for i in range(width)]
+    a = [
+        [sum(w * r[i] * r[j] for r, w in zip(rows, weights)) for j in range(width)]
+        for i in range(width)
+    ]
+    b = [
+        sum(w * r[i] * t for r, t, w in zip(rows, targets, weights))
+        for i in range(width)
+    ]
 
     for col in range(width):
         pivot = max(range(col, width), key=lambda r: abs(a[r][col]))
@@ -151,11 +187,16 @@ def _solve(rows: list[list[float]], targets: list[float]) -> list[float] | None:
     return out
 
 
-def fit_rider_model(samples: list[tuple[float, float, float]]) -> RiderModel | None:
+def fit_rider_model(
+    samples: list[tuple[float, float, float, float]],
+    half_life_years: float | None = HALF_LIFE_YEARS,
+) -> RiderModel | None:
     """Least squares P = CP + W'/t + k*grade over recorded attempts.
 
-    Samples are (duration_s, grade, measured_power_w), with grade as a fraction
-    rather than a percentage so the coefficient stays in ordinary watts.
+    Samples are (duration_s, grade, measured_power_w, age_years), with grade as
+    a fraction rather than a percentage so the coefficient stays in ordinary
+    watts, and age measured back from whenever the caller considers now -- the
+    present for a real fit, the cutoff for a backtest.
 
     One trimming pass follows the first fit. A few recorded efforts are not what
     they appear -- a segment ridden in a group, a GPS artefact shortening the
@@ -164,23 +205,32 @@ def fit_rider_model(samples: list[tuple[float, float, float]]) -> RiderModel | N
     choosing which, and the fit is reported over what survived.
     """
     usable = [
-        (t, g, p)
-        for t, g, p in samples
+        (t, g, p, max(age, 0.0))
+        for t, g, p, age in samples
         if t > 0 and math.isfinite(p) and math.isfinite(g)
     ]
     if len(usable) < 6:
         return None
 
+    def weight(age: float) -> float:
+        if half_life_years is None or half_life_years <= 0:
+            return 1.0
+        return 0.5 ** (age / half_life_years)
+
     def solve(points):
-        rows = [[1.0, 1.0 / t, g] for t, g, _ in points]
-        return _solve(rows, [p for _, _, p in points])
+        rows = [[1.0, 1.0 / t, g] for t, g, _, _ in points]
+        return _solve(
+            rows,
+            [p for _, _, p, _ in points],
+            [weight(age) for _, _, _, age in points],
+        )
 
     first = solve(usable)
     if first is None:
         return None
     cp, w_prime, grade_w = first
 
-    residuals = [p - (cp + w_prime / t + grade_w * g) for t, g, p in usable]
+    residuals = [p - (cp + w_prime / t + grade_w * g) for t, g, p, _ in usable]
     mean = sum(residuals) / len(residuals)
     spread = (sum((r - mean) ** 2 for r in residuals) / len(residuals)) ** 0.5
     if spread > 0:
@@ -199,7 +249,7 @@ def fit_rider_model(samples: list[tuple[float, float, float]]) -> RiderModel | N
     # separate the two.
     cp = max(cp, 1.0)
     w_prime = max(w_prime, 0.0)
-    grades = [g for _, g, _ in usable]
+    grades = [g for _, g, _, _ in usable]
 
     return RiderModel(
         cp_w=cp,

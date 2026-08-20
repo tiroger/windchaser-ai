@@ -22,6 +22,7 @@ import json
 import statistics
 import sys
 from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -104,8 +105,29 @@ def main() -> None:
         # The same distance-weighted gradient the prediction will use, so the
         # curve is fitted against the quantity it is later asked about.
         grade = mean_grade(p["sections"])
+        # Ages measured back from the newest attempt on record, so the backtest
+        # weights history the same way a fit run today would.
+        newest = max(
+            datetime.fromisoformat(e["start_date"].replace("Z", "+00:00"))
+            for e in p["attempts"]
+        ).astimezone(timezone.utc)
         p["samples"] = [
-            (label_time(e), grade, float(e["average_watts"])) for e in p["attempts"]
+            (
+                label_time(e),
+                grade,
+                float(e["average_watts"]),
+                max(
+                    (
+                        newest
+                        - datetime.fromisoformat(
+                            e["start_date"].replace("Z", "+00:00")
+                        ).astimezone(timezone.utc)
+                    ).days
+                    / 365.25,
+                    0.0,
+                ),
+            )
+            for e in p["attempts"]
         ]
         p["observations"] = [
             (p["sections"], e["weather"], float(e["average_watts"]), label_time(e))

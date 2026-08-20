@@ -99,7 +99,7 @@ def main() -> None:
         by_segment[str(e["segment_id"])].append(e)
 
     rows = []
-    all_err = {"A": [], "B": [], "C": []}
+    all_err = {"A": [], "B": [], "C": [], "D": []}
     measured_pairs = []
 
     for sid, efforts in sorted(by_segment.items(), key=lambda kv: -len(kv[1])):
@@ -130,13 +130,17 @@ def main() -> None:
         # B and C: fit across the training efforts in their real weather.
         power_b = fit_power_from_efforts(flat, train)
         power_c = fit_power_from_efforts(profiled, train)
+        # D: same as C, discounting older attempts. The split here is already
+        # time-ordered, so this measures what it claims to.
+        power_d = fit_power_from_efforts(profiled, train, half_life_years=2.0)
 
-        err = {"A": [], "B": [], "C": []}
+        err = {"A": [], "B": [], "C": [], "D": []}
         for e in test:
             actual = label_time(e)
             err["A"].append(predict(flat, power_a, e["weather"]) - actual)
             err["B"].append(predict(flat, power_b, e["weather"]) - actual)
             err["C"].append(predict(profiled, power_c, e["weather"]) - actual)
+            err["D"].append(predict(profiled, power_d, e["weather"]) - actual)
 
         for k in err:
             all_err[k].extend(err[k])
@@ -190,6 +194,7 @@ def main() -> None:
         ("A", "A  single PR, still air, average grade"),
         ("B", "B  multi-effort fit, real weather, average grade"),
         ("C", "C  multi-effort fit, real weather, real elevation"),
+        ("D", "D  same, discounting attempts older than two years"),
     ]:
         e = all_err[key]
         mae = statistics.fmean(abs(x) for x in e)
