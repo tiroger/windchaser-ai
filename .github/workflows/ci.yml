@@ -18,10 +18,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # .env.example is deliberately tracked; every other .env variant is not.
+          # One pattern per -e. An anchor inside an alternation group is a
+          # literal in BSD grep and an anchor in GNU grep, so the previous
+          # single-regex form silently missed .env and .tfstate on one of them.
           if git ls-files \
             | grep -vE '(^|/)\.env\.example$' \
-            | grep -E '(^|/)(\.env($|\.)|.*\.tfstate($|\.)|.*\.tfplan$|.*\.pem$|.*\.key$)'; then
+            | grep -E \
+                -e '(^|/)\.env$' \
+                -e '(^|/)\.env\.' \
+                -e '\.tfstate$' \
+                -e '\.tfstate\.' \
+                -e '(^|/)tfplan$' \
+                -e '\.tfplan$' \
+                -e '\.pem$' \
+                -e '\.key$' \
+                -e '(^|/)\.strava-refresh-token$'; then
             echo "Sensitive or generated files are tracked."
             exit 1
           fi
