@@ -47,3 +47,8 @@ output "app_data_bucket" {
   description = "Bucket holding runtime data such as the calibration bundle."
   value       = aws_s3_bucket.app_data.id
 }
+
+output "compute_role_name" {
+  description = "Name of the SSR compute role, for attaching further policies."
+  value       = aws_iam_role.compute.name
+}

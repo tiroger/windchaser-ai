@@ -22,6 +22,8 @@ interface StravaCredentials {
   STRAVA_CLIENT_ID: string;
   STRAVA_CLIENT_SECRET: string;
   STRAVA_REFRESH_TOKEN: string;
+  /** Shared secret echoed during Strava's webhook subscription handshake. */
+  STRAVA_VERIFY_TOKEN: string;
 }
 
 let cached: Partial<StravaCredentials> | null = null;
@@ -48,6 +50,7 @@ async function load(): Promise<Partial<StravaCredentials>> {
       STRAVA_CLIENT_ID: parsed.STRAVA_CLIENT_ID ?? parsed.CLIENT_ID,
       STRAVA_CLIENT_SECRET: parsed.STRAVA_CLIENT_SECRET ?? parsed.CLIENT_SECRET,
       STRAVA_REFRESH_TOKEN: parsed.STRAVA_REFRESH_TOKEN ?? parsed.REFRESH_TOKEN,
+      STRAVA_VERIFY_TOKEN: parsed.STRAVA_VERIFY_TOKEN,
     };
   } catch (error) {
     // A missing or unreadable secret is a configuration problem, not a crash.

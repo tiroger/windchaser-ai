@@ -15,6 +15,7 @@ locals {
     WINDCHASER_BRIEFING_MODEL = var.briefing_model
     APP_DATA_BUCKET           = aws_s3_bucket.app_data.id
     CALIBRATION_S3_KEY        = "calibration.json"
+    STRAVA_EVENTS_QUEUE_URL   = var.strava_events_queue_url == null ? "" : var.strava_events_queue_url
   }
 }
 

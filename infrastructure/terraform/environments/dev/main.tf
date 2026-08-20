@@ -44,4 +44,20 @@ module "web" {
   # by evidence hash, so this costs a handful of calls a day rather than one per
   # page view, and the tag-filtered budget and anomaly monitor watch it.
   enable_bedrock = true
+
+  # Set after strava_ingestion exists; the endpoint acknowledges and discards
+  # until it does, rather than making Strava retry a configuration problem.
+  strava_events_queue_url = module.strava_ingestion.queue_url
+}
+
+module "strava_ingestion" {
+  source = "../../modules/strava-ingestion"
+
+  environment = "dev"
+
+  # The web runtime is what enqueues: Strava calls the endpoint, never SQS.
+  consumer_role_name = module.web.compute_role_name
+
+  # Alarms are pointless without somewhere to send them.
+  alarm_topic_arn = module.observability.alert_topic_arn
 }

@@ -95,3 +95,16 @@ export async function stravaConfig(): Promise<StravaConfig | null> {
     ? (merged as StravaConfig)
     : null;
 }
+
+/**
+ * Shared secret Strava echoes back during the webhook subscription handshake.
+ * Same precedence as the credentials: environment first so a local run works,
+ * then Secrets Manager.
+ */
+export async function stravaVerifyToken(): Promise<string | null> {
+  const fromEnv = readEnv("STRAVA_VERIFY_TOKEN");
+  if (fromEnv) return fromEnv;
+  if (!secretsConfigured()) return null;
+  const secret = await stravaCredentials();
+  return secret.STRAVA_VERIFY_TOKEN ?? null;
+}

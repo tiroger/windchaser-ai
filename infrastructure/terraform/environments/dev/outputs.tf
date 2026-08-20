@@ -33,3 +33,8 @@ output "strava_secret_name" {
   description = "Secret to populate with `aws secretsmanager put-secret-value`."
   value       = module.web.strava_secret_name
 }
+
+output "strava_events_queue_url" {
+  description = "Queue receiving Strava webhook events."
+  value       = module.strava_ingestion.queue_url
+}

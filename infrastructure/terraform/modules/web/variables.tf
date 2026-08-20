@@ -89,3 +89,14 @@ variable "briefing_model" {
   type        = string
   default     = "claude-opus-5"
 }
+
+variable "strava_events_queue_url" {
+  description = <<-EOT
+    Queue the webhook endpoint enqueues to. Null leaves the endpoint acknowledging
+    Strava and discarding events, which is the correct behaviour before the
+    ingestion path exists: a 500 would only make Strava retry a configuration
+    problem and count failures against the subscription.
+  EOT
+  type        = string
+  default     = null
+}
