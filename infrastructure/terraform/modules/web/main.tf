@@ -102,6 +102,15 @@ resource "aws_amplify_branch" "tracked" {
 
   # Compute logs are the only way to see why an API route failed in production.
   enable_performance_mode = false
+
+  lifecycle {
+    # Amplify injects AMPLIFY_BACKEND_APP_ID and USER_BRANCH into the branch
+    # itself. Terraform declaring none sends an empty map, which the API
+    # rejects outright with "Environment variables cannot have an empty key",
+    # taking framework and stage down with it. App-level variables are still
+    # managed above; these two belong to the platform.
+    ignore_changes = [environment_variables]
+  }
 }
 
 resource "aws_cloudwatch_log_group" "amplify" {
