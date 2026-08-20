@@ -2,7 +2,7 @@ import "server-only";
 
 import { haversineM } from "../geo";
 import type { LatLon, Segment } from "../types";
-import { readEnv } from "./env";
+import { stravaConfig } from "./env";
 
 const API = "https://www.strava.com/api/v3";
 const TOKEN_URL = "https://www.strava.com/oauth/token";
@@ -17,10 +17,14 @@ export async function accessToken(): Promise<string> {
   if (tokenState && Date.now() < tokenState.expiresAt - 60_000) {
     return tokenState.token;
   }
+  const config = await stravaConfig();
+  if (!config) {
+    throw new Error("No Strava credentials available from env or Secrets Manager.");
+  }
   const body = new URLSearchParams({
-    client_id: readEnv("STRAVA_CLIENT_ID") ?? "",
-    client_secret: readEnv("STRAVA_CLIENT_SECRET") ?? "",
-    refresh_token: readEnv("STRAVA_REFRESH_TOKEN") ?? "",
+    client_id: config.clientId,
+    client_secret: config.clientSecret,
+    refresh_token: config.refreshToken,
     grant_type: "refresh_token",
   });
   const res = await fetch(TOKEN_URL, { method: "POST", body });

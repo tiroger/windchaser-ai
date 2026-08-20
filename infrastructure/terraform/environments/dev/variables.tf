@@ -40,3 +40,14 @@ variable "activate_cost_allocation_tag" {
   type        = bool
   default     = false
 }
+
+variable "amplify_github_token" {
+  description = <<-EOT
+    Optional GitHub token letting Amplify read the repository. Left null, the
+    repository is connected once through the console with the GitHub App, which
+    is the more secure option and the one Terraform cannot express.
+  EOT
+  type        = string
+  default     = null
+  sensitive   = true
+}

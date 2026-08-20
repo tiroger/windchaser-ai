@@ -3,6 +3,8 @@ import "server-only";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { secretsConfigured, stravaCredentials } from "./secrets";
+
 /**
  * Reads credentials from the repository root .env so a single file serves both
  * the Python fixture script and the web app. Values never leave the server.
@@ -58,10 +60,38 @@ export function readEnv(name: string): string | undefined {
   );
 }
 
-export function hasStravaCredentials(): boolean {
-  return Boolean(
-    readEnv("STRAVA_CLIENT_ID") &&
-      readEnv("STRAVA_CLIENT_SECRET") &&
-      readEnv("STRAVA_REFRESH_TOKEN"),
-  );
+export interface StravaConfig {
+  clientId: string;
+  clientSecret: string;
+  refreshToken: string;
+}
+
+/**
+ * Resolve Strava credentials from the environment first, then Secrets Manager.
+ *
+ * The environment wins so a local .env keeps working and an operator can
+ * override a deployed value without a redeploy. Deployed, nothing is in the
+ * environment and the secret supplies everything.
+ */
+export async function stravaConfig(): Promise<StravaConfig | null> {
+  const fromEnv = {
+    clientId: readEnv("STRAVA_CLIENT_ID"),
+    clientSecret: readEnv("STRAVA_CLIENT_SECRET"),
+    refreshToken: readEnv("STRAVA_REFRESH_TOKEN"),
+  };
+  if (fromEnv.clientId && fromEnv.clientSecret && fromEnv.refreshToken) {
+    return fromEnv as StravaConfig;
+  }
+
+  if (!secretsConfigured()) return null;
+
+  const secret = await stravaCredentials();
+  const merged = {
+    clientId: fromEnv.clientId ?? secret.STRAVA_CLIENT_ID,
+    clientSecret: fromEnv.clientSecret ?? secret.STRAVA_CLIENT_SECRET,
+    refreshToken: fromEnv.refreshToken ?? secret.STRAVA_REFRESH_TOKEN,
+  };
+  return merged.clientId && merged.clientSecret && merged.refreshToken
+    ? (merged as StravaConfig)
+    : null;
 }

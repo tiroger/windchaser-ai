@@ -113,9 +113,21 @@ resource "aws_ce_anomaly_monitor" "application" {
   name         = "${local.name}-anomaly"
   monitor_type = "CUSTOM"
 
+  # AWS stores user-defined tag keys with a "user:" prefix and returns them
+  # that way. Declaring the bare key makes every subsequent plan want to
+  # replace the monitor, which would also discard its detection history.
+  # Two things make this stable across plans. AWS stores user-defined tag keys
+  # with a "user:" prefix and returns them that way, and it returns the unused
+  # sibling expressions as explicit nulls. Omitting either makes every
+  # subsequent plan want to replace the monitor and discard its history.
   monitor_specification = jsonencode({
+    And            = null
+    CostCategories = null
+    Dimensions     = null
+    Not            = null
+    Or             = null
     Tags = {
-      Key          = "Application"
+      Key          = "user:Application"
       Values       = [var.application]
       MatchOptions = ["EQUALS"]
     }

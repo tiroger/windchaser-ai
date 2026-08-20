@@ -21,3 +21,17 @@ module "observability" {
   # both roots would have them fight over the same account-level setting.
   activate_cost_allocation_tag = var.activate_cost_allocation_tag
 }
+
+module "web" {
+  source = "../../modules/web"
+
+  environment        = "dev"
+  branch_name        = "main"
+  log_retention_days = 14
+
+  # Null leaves the app unconnected, and the repository is attached once
+  # through the console using the GitHub App. See the module README: this is
+  # the documented exception to everything-in-Terraform, because Amplify's
+  # GitHub App connection has no Terraform representation.
+  github_access_token = var.amplify_github_token
+}

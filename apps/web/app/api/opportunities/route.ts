@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { haversineM } from "@/lib/geo";
-import { hasStravaCredentials } from "@/lib/server/env";
+import { stravaConfig } from "@/lib/server/env";
 import {
   clusterRegions,
   exploreSegments,
@@ -150,7 +150,7 @@ export async function GET(request: Request) {
     return saved;
   };
 
-  if (!hasStravaCredentials()) {
+  if (!(await stravaConfig())) {
     const bundle = loadSaved();
     starred = bundle.segments.filter((s) => s.source === "starred");
     athlete = bundle.athlete;
