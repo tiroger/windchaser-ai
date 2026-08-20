@@ -31,6 +31,9 @@ jobs:
       TF_IN_AUTOMATION: "true"
       TF_INPUT: "false"
       ENVIRONMENT: ${{ inputs.environment || 'dev' }}
+      # Same variables the apply uses. A plan run with different inputs shows
+      # changes the apply would never make, which trains reviewers to skim it.
+      TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
     steps:
       - uses: actions/checkout@v4
 

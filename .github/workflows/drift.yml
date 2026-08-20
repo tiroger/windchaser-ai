@@ -14,6 +14,14 @@ jobs:
     if: ${{ vars.AWS_TERRAFORM_PLAN_ROLE_ARN != '' && vars.TERRAFORM_STATE_BUCKET != '' }}
     runs-on: ubuntu-latest
     environment: development
+    # Drift is measured against the configuration that was applied, so the plan
+    # needs the same variables the apply had. Without alert_email the plan wants
+    # to destroy a confirmed SNS subscription every run, and a detector that
+    # always reports drift is one nobody reads.
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+      TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3

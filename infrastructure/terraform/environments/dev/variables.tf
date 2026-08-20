@@ -52,3 +52,9 @@ variable "amplify_github_token" {
   default     = null
   sensitive   = true
 }
+
+variable "domain_name" {
+  description = "Registered domain this environment serves."
+  type        = string
+  default     = "windchaser.io"
+}

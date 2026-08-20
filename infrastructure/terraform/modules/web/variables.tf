@@ -100,3 +100,16 @@ variable "strava_events_queue_url" {
   type        = string
   default     = null
 }
+
+variable "domain_name" {
+  description = <<-EOT
+    Custom domain serving the app at both apex and www. Null keeps the app on
+    its amplifyapp.com URL, which stays working either way.
+
+    Set this only once the registrar delegates the domain to a Route 53 zone in
+    this account. ACM validates over public DNS, so an association made before
+    delegation resolves stays pending and then fails.
+  EOT
+  type        = string
+  default     = null
+}

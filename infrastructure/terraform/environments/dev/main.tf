@@ -5,6 +5,16 @@
 # projects, and guardrails are worth far more before there is spend to guard
 # than after.
 
+locals {
+  # Turned true once `dig +short NS windchaser.io` returns the four servers from
+  # the domain_nameservers output, and not before: ACM validates the certificate
+  # over public DNS, so an association made ahead of delegation sits pending and
+  # then fails, and a failed association must be deleted before another can be
+  # created. Recorded here rather than as a CI variable so that plan and apply
+  # cannot disagree about it.
+  domain_delegated = false
+}
+
 module "observability" {
   source = "../../modules/observability-baseline"
 
@@ -20,6 +30,13 @@ module "observability" {
   # Activated once, from whichever environment applies first. Flipping it on in
   # both roots would have them fight over the same account-level setting.
   activate_cost_allocation_tag = var.activate_cost_allocation_tag
+}
+
+module "dns" {
+  source = "../../modules/dns"
+
+  environment = "dev"
+  domain_name = var.domain_name
 }
 
 module "web" {
@@ -48,6 +65,10 @@ module "web" {
   # Set after strava_ingestion exists; the endpoint acknowledges and discards
   # until it does, rather than making Strava retry a configuration problem.
   strava_events_queue_url = module.strava_ingestion.queue_url
+
+  # Null until the registrar delegates to the zone above. The Amplify URL keeps
+  # working throughout, so this is additive rather than a cutover.
+  domain_name = local.domain_delegated ? module.dns.domain_name : null
 }
 
 module "strava_ingestion" {

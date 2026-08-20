@@ -38,3 +38,18 @@ output "strava_events_queue_url" {
   description = "Queue receiving Strava webhook events."
   value       = module.strava_ingestion.queue_url
 }
+
+output "domain_nameservers" {
+  description = "Nameservers to set at the registrar. Delegation must resolve before domain_delegated is turned on."
+  value       = module.dns.name_servers
+}
+
+output "domain_verified" {
+  description = "True once the custom domain has passed verification; null while domain_delegated is false."
+  value       = module.web.domain_verified
+}
+
+output "public_url" {
+  description = "Address to share: the custom domain once it is live, otherwise the Amplify URL."
+  value       = module.web.public_url
+}

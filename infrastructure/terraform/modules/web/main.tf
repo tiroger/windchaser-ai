@@ -52,6 +52,20 @@ resource "aws_amplify_app" "web" {
     AMPLIFY_DIFF_DEPLOY = "false"
   })
 
+  # www redirects to the apex rather than serving the site twice at two
+  # addresses. Amplify's console generates this same rule when a domain is added
+  # there. The 302 is deliberate: a 301 is cached by browsers long after the
+  # rule that produced it changes, so it makes the apex choice hard to undo.
+  dynamic "custom_rule" {
+    for_each = var.domain_name == null ? [] : [var.domain_name]
+
+    content {
+      source = "https://www.${custom_rule.value}"
+      target = "https://${custom_rule.value}"
+      status = "302"
+    }
+  }
+
   # Amplify would otherwise reset these on every apply where the console has
   # been touched.
   lifecycle {

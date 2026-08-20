@@ -52,3 +52,46 @@ output "compute_role_name" {
   description = "Name of the SSR compute role, for attaching further policies."
   value       = aws_iam_role.compute.name
 }
+
+output "domain_name" {
+  description = "Custom domain serving the app, or null while it is only on the Amplify URL."
+  value = length(aws_amplify_domain_association.primary) > 0 ? (
+    aws_amplify_domain_association.primary[0].domain_name
+  ) : null
+}
+
+output "domain_verified" {
+  description = <<-EOT
+    True once every declared hostname has passed verification.
+
+    The association does not block on verification, so this reads false
+    immediately after the first apply and is expected to become true within
+    minutes. The provider exposes no overall domain status, so this is the
+    conjunction of the per-subdomain flags, which is the same question.
+  EOT
+  value = length(aws_amplify_domain_association.primary) > 0 ? (
+    alltrue([for s in aws_amplify_domain_association.primary[0].sub_domain : s.verified])
+  ) : null
+}
+
+output "domain_verification_record" {
+  description = <<-EOT
+    Certificate validation record Amplify expects to see in DNS.
+
+    Amplify writes this into Route 53 itself while the zone is in this account.
+    It is surfaced because when a domain is stuck pending, whether this record
+    resolves publicly is the first thing worth checking.
+  EOT
+  value = length(aws_amplify_domain_association.primary) > 0 ? (
+    aws_amplify_domain_association.primary[0].certificate_verification_dns_record
+  ) : null
+}
+
+output "public_url" {
+  description = "Address to share: the custom domain when there is one, otherwise the Amplify branch URL."
+  value = length(aws_amplify_domain_association.primary) > 0 ? (
+    "https://${aws_amplify_domain_association.primary[0].domain_name}"
+    ) : (
+    length(aws_amplify_branch.tracked) > 0 ? "https://${aws_amplify_branch.tracked[0].branch_name}.${aws_amplify_app.web.default_domain}" : null
+  )
+}
