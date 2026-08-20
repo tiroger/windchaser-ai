@@ -15,8 +15,13 @@ output "budget_name" {
 }
 
 output "web_url" {
-  description = "URL serving the development web app."
+  description = "URL serving the development web app, once a branch exists."
   value       = module.web.branch_url
+}
+
+output "web_repository_connected" {
+  description = "False means the repository still needs connecting in the Amplify console."
+  value       = module.web.repository_connected
 }
 
 output "web_app_id" {

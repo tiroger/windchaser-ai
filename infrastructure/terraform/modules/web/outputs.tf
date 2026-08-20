@@ -9,8 +9,18 @@ output "default_domain" {
 }
 
 output "branch_url" {
-  description = "URL serving the tracked branch."
-  value       = "https://${aws_amplify_branch.tracked.branch_name}.${aws_amplify_app.web.default_domain}"
+  description = "URL serving the tracked branch, once a branch exists."
+  value = length(aws_amplify_branch.tracked) > 0 ? (
+    "https://${aws_amplify_branch.tracked[0].branch_name}.${aws_amplify_app.web.default_domain}"
+  ) : null
+}
+
+output "repository_connected" {
+  description = "False means the repository still needs connecting in the console."
+  # Whether a token was supplied is not itself sensitive; the token is. Marking
+  # this explicitly rather than making the output sensitive keeps it readable
+  # in plan output, which is the entire point of surfacing it.
+  value = nonsensitive(var.github_access_token != null)
 }
 
 output "strava_secret_arn" {

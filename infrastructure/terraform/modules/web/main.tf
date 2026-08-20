@@ -51,7 +51,11 @@ resource "aws_amplify_app" "web" {
   description = "WindChaser cycling opportunity dashboard (${var.environment})."
   platform    = "WEB_COMPUTE"
 
-  repository   = var.repository_url
+  # Amplify's CreateApp rejects a repository without a token, so the app is
+  # created unconnected when none is supplied and the repository is attached
+  # once through the console with the GitHub App. Both are then ignored, so a
+  # console connection is never reverted by a later apply.
+  repository   = var.github_access_token == null ? null : var.repository_url
   access_token = var.github_access_token
 
   iam_service_role_arn = aws_iam_role.amplify.arn
@@ -75,14 +79,18 @@ resource "aws_amplify_app" "web" {
   # been touched.
   lifecycle {
     ignore_changes = [
-      # The repository connection is completed once through the console when no
-      # access token is supplied; do not fight it afterwards.
       access_token,
+      repository,
     ]
   }
 }
 
+# A branch is only meaningful once the repository is connected. Created with
+# the token path; with the console path it is created alongside the connection
+# and adopted on the next apply.
 resource "aws_amplify_branch" "tracked" {
+  count = var.github_access_token == null ? 0 : 1
+
   app_id      = aws_amplify_app.web.id
   branch_name = var.branch_name
 
