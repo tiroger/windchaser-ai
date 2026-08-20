@@ -59,3 +59,8 @@ apps/web/public/maplibre-gl-*.mjs
 # power data. Regenerate with scripts/fetch_effort_history.py + build_calibration.py
 data/training/
 apps/web/fixtures/calibration.json
+
+# Deployment package Terraform builds from the worker's source. Generated on
+# every plan, so committing it adds a binary that changes with every edit and
+# means nothing on its own.
+.terraform-build/
