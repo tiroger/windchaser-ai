@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  repository-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reject committed secrets and generated state
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-files | grep -E '(^|/)(\.env($|\.)|.*\.tfstate($|\.)|.*\.tfplan$|.*\.pem$|.*\.key$)'; then
+            echo "Sensitive or generated files are tracked."
+            exit 1
+          fi
+
+      - name: Check documentation links and source layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f README.md
+          test -f docs/PROJECT_PLAN.md
+          test -f docs/architecture/AWS_ARCHITECTURE.md
+          test -f docs/architecture/COST_STRATEGY.md
+          test -f docs/architecture/TERRAFORM_AND_CICD.md
+
+  terraform-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.8.5
+
+      - name: Terraform format
+        run: terraform fmt -recursive -check infrastructure/terraform
+
+      - name: Validate development root
+        working-directory: infrastructure/terraform/environments/dev
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+      - name: Validate production root
+        working-directory: infrastructure/terraform/environments/prod
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+  application-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install pinned Python and dependencies
+        run: |
+          uv python install
+          uv sync --locked --all-groups
+
+      - name: Verify Python environment
+        run: uv run python --version
+
+      - name: Application checks
+        run: echo "Add uv-run lint, type-check, and test commands with the first Python package."

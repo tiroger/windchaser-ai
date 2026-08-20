@@ -1,0 +1,18 @@
+[project]
+name = "windchaser-ai"
+version = "0.1.0"
+description = "AWS-native cycling opportunity intelligence and alerting platform."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[dependency-groups]
+dev = []
+
+[tool.uv]
+package = false
+
+# Python dependencies are managed centrally with uv during the foundation phase.
+# Service-specific packages can become uv workspace members when their deployment
+# boundaries require independent lock/install sets.
+

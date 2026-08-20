@@ -1,0 +1,61 @@
+name: Terraform Plan
+
+on:
+  pull_request:
+    paths:
+      - "infrastructure/terraform/**"
+      - ".github/workflows/terraform-plan.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to plan
+        required: true
+        default: dev
+        type: choice
+        options: [dev, prod]
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'dev' }}
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+      ENVIRONMENT: ${{ inputs.environment || 'dev' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.8.5
+
+      - name: Configure AWS credentials with OIDC
+        if: ${{ vars.AWS_TERRAFORM_PLAN_ROLE_ARN != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_TERRAFORM_PLAN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-west-2' }}
+
+      - name: Validate configuration
+        working-directory: infrastructure/terraform/environments/${{ env.ENVIRONMENT }}
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+      - name: Plan after bootstrap is configured
+        if: ${{ vars.TERRAFORM_STATE_BUCKET != '' && vars.AWS_TERRAFORM_PLAN_ROLE_ARN != '' }}
+        working-directory: infrastructure/terraform/environments/${{ env.ENVIRONMENT }}
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ vars.TERRAFORM_STATE_BUCKET }}" \
+            -backend-config="key=windchaser-ai/${ENVIRONMENT}/terraform.tfstate" \
+            -backend-config="region=${{ vars.AWS_REGION || 'us-west-2' }}" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+          terraform plan -no-color -out=tfplan
+

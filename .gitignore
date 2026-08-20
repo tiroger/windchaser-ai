@@ -1,0 +1,43 @@
+# JavaScript
+node_modules/
+.next/
+out/
+.turbo/
+coverage/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Secrets and environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local data and generated artifacts
+data/private/
+artifacts/
+tmp/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+
