@@ -52,7 +52,7 @@ const mid = (s: Segment): LatLon => s.points[Math.floor(s.points.length / 2)];
 // the working copy first and S3 second.
 
 
-async function loadStarred(): Promise<SegmentCache> {
+async function loadStarred(known?: Map<number, Segment>): Promise<SegmentCache> {
   if (starredCache && Date.now() - starredCache.fetchedAt < STARRED_TTL_MS) {
     return starredCache;
   }
@@ -60,7 +60,7 @@ async function loadStarred(): Promise<SegmentCache> {
   // previous good cache in place rather than replacing it with a bad one.
   const [athlete, segments] = await Promise.all([
     fetchAthlete(),
-    fetchStarredSegments(),
+    fetchStarredSegments(known),
   ]);
   if (segments.length === 0) {
     throw new Error("Strava returned no starred segments; not caching that.");
@@ -141,7 +141,22 @@ export async function GET(request: Request) {
     notices.push("No Strava credentials found, so segments come from the last saved bundle.");
   } else {
     try {
-      const loaded = await loadStarred();
+      // The saved bundle doubles as durable segment geometry. It exists anyway
+      // as the fallback for when Strava is unreachable, and reusing it here
+      // turns a starred refresh from twenty-seven Strava reads into one.
+      //
+      // What this trades away is the personal record carried on a segment
+      // record, which can then be as old as the bundle. For any segment with
+      // recorded efforts that does not matter: applyCalibration overwrites the
+      // target with best_moving_time_s, rebuilt daily by the worker from the
+      // effort history the webhook keeps current, and a moving-time best is the
+      // better comparison anyway. For the rest it is stale until the worker
+      // backfills them, which it is working through at a segment a day.
+      const stored = await loadSaved();
+      const known = new Map<number, Segment>(
+        (stored?.segments ?? []).map((s) => [s.id, s]),
+      );
+      const loaded = await loadStarred(known);
       starred = loaded.segments;
       athlete = loaded.athlete;
     } catch (error) {

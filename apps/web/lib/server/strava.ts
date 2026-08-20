@@ -235,10 +235,13 @@ export async function fetchAthlete() {
  */
 const MAX_TOLERATED_DETAIL_FAILURE = 0.25;
 
-export async function fetchStarredSegments(): Promise<Segment[]> {
+export async function fetchStarredSegments(
+  known?: Map<number, Segment>,
+): Promise<Segment[]> {
   const out: Segment[] = [];
   let attempted = 0;
   let failed = 0;
+  let reused = 0;
 
   for (let page = 1; page <= 5; page++) {
     const batch = await api<Array<{ id: number }>>(
@@ -246,6 +249,18 @@ export async function fetchStarredSegments(): Promise<Segment[]> {
     );
     if (batch.length === 0) break;
     for (const summary of batch) {
+      // Geometry does not change. A segment's polyline, distance and gradient
+      // are the same today as yesterday, and re-fetching all of them cost one
+      // Strava read each: twenty-seven per cold container against a thousand a
+      // day, which this runtime exhausts in a few dozen cold starts. The list
+      // above is still fetched live, so starring or unstarring is picked up
+      // immediately; only the shape of a segment is remembered.
+      const cached = known?.get(summary.id);
+      if (cached) {
+        out.push({ ...cached, source: "starred" });
+        reused++;
+        continue;
+      }
       attempted++;
       try {
         const detail = await api<StravaSegmentDetail>(`/segments/${summary.id}`);
@@ -258,6 +273,13 @@ export async function fetchStarredSegments(): Promise<Segment[]> {
       }
     }
     if (batch.length < 100) break;
+  }
+
+  if (reused > 0) {
+    console.log(
+      `[strava] ${reused} starred segments served from stored geometry, ` +
+        `${attempted} fetched`,
+    );
   }
 
   if (attempted > 0 && failed / attempted > MAX_TOLERATED_DETAIL_FAILURE) {
