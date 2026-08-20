@@ -4,6 +4,17 @@
 # static platform would drop them, and with them the Strava credentials that
 # must stay off the browser.
 
+# Set on both the app and the branch. App level covers the build; the SSR
+# compute runtime reads the branch's variables, and an app-level value alone is
+# invisible to it -- which is how a correctly configured secret ARN still
+# produced "no credentials" at runtime.
+locals {
+  runtime_environment = {
+    STRAVA_SECRET_ARN = aws_secretsmanager_secret.strava.arn
+    LIVE_AI_ENABLED   = "false"
+  }
+}
+
 resource "aws_amplify_app" "web" {
   name        = "windchaser-${var.environment}"
   description = "WindChaser cycling opportunity dashboard (${var.environment})."
@@ -23,19 +34,13 @@ resource "aws_amplify_app" "web" {
   # with quoted keys was parsed only partially by Amplify, which ran the build
   # phase and skipped preBuild entirely.
 
-  environment_variables = {
+  environment_variables = merge(local.runtime_environment, {
     # Tells Amplify which application in the monorepo this app builds.
     AMPLIFY_MONOREPO_APP_ROOT = var.app_root
     # Full deploys. Diff deploys skip work based on changed paths and get this
     # wrong for a monorepo whose app depends on files outside its own root.
     AMPLIFY_DIFF_DEPLOY = "false"
-    # The app resolves credentials from here at runtime. The ARN is not secret;
-    # reading it requires the compute role.
-    STRAVA_SECRET_ARN = aws_secretsmanager_secret.strava.arn
-    # Bedrock stays off until the briefing is wired to it, so a misconfiguration
-    # cannot quietly start spending on inference.
-    LIVE_AI_ENABLED = "false"
-  }
+  })
 
   # Amplify would otherwise reset these on every apply where the console has
   # been touched.
@@ -65,14 +70,12 @@ resource "aws_amplify_branch" "tracked" {
   # Compute logs are the only way to see why an API route failed in production.
   enable_performance_mode = false
 
-  lifecycle {
-    # Amplify injects AMPLIFY_BACKEND_APP_ID and USER_BRANCH into the branch
-    # itself. Terraform declaring none sends an empty map, which the API
-    # rejects outright with "Environment variables cannot have an empty key",
-    # taking framework and stage down with it. App-level variables are still
-    # managed above; these two belong to the platform.
-    ignore_changes = [environment_variables]
-  }
+  # What the running application actually reads. Amplify also injects
+  # AMPLIFY_BACKEND_APP_ID and USER_BRANCH here and re-adds them on each build,
+  # so declaring only our own does not lose them. Declaring none at all sends an
+  # empty map, which the API rejects with "Environment variables cannot have an
+  # empty key" and takes framework and stage down with it.
+  environment_variables = local.runtime_environment
 }
 
 resource "aws_cloudwatch_log_group" "amplify" {
