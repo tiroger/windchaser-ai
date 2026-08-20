@@ -34,4 +34,8 @@ module "web" {
   # the documented exception to everything-in-Terraform, because Amplify's
   # GitHub App connection has no Terraform representation.
   github_access_token = var.amplify_github_token
+
+  # Connected through the console on 2026-08-20. Terraform now owns the branch
+  # and reasserts the compute platform the console reset.
+  repository_connected = true
 }

@@ -85,11 +85,12 @@ resource "aws_amplify_app" "web" {
   }
 }
 
-# A branch is only meaningful once the repository is connected. Created with
-# the token path; with the console path it is created alongside the connection
-# and adopted on the next apply.
+# A branch cannot exist before the repository is connected, so this is gated
+# rather than unconditional. Once connected -- by token or by console -- the
+# branch is Terraform's to own, because the console connect flow sets framework
+# and stage to values that break server-side rendering.
 resource "aws_amplify_branch" "tracked" {
-  count = var.github_access_token == null ? 0 : 1
+  count = var.repository_connected ? 1 : 0
 
   app_id      = aws_amplify_app.web.id
   branch_name = var.branch_name

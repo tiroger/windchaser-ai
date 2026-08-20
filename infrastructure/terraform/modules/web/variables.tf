@@ -51,3 +51,17 @@ variable "enable_auto_build" {
   type        = bool
   default     = true
 }
+
+variable "repository_connected" {
+  description = <<-EOT
+    True once the repository is attached, by token or through the console.
+
+    Gates the branch, which cannot be created before a repository exists. Also
+    the point at which Terraform starts correcting what the console connect
+    flow changes: it resets the app to the static WEB platform and the branch
+    framework to "Web", both of which silently disable server-side rendering
+    and every API route with it.
+  EOT
+  type        = bool
+  default     = false
+}
