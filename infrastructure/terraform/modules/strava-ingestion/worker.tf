@@ -123,8 +123,17 @@ resource "aws_lambda_function" "worker" {
   source_code_hash = data.archive_file.worker.output_base64sha256
 
   # The queue's visibility timeout is derived from this; see the variable.
-  timeout     = var.worker_timeout_seconds
-  memory_size = 512
+  timeout = var.worker_timeout_seconds
+
+  # Sized for processor, not memory. Lambda allocates CPU in proportion to
+  # memory, and a full core arrives around 1.8 GB. Rebuilding the calibration is
+  # arithmetic -- bisection for speed on every section of every effort, then a
+  # search over rider constants -- and at 512 MB it took 247 seconds of a 300
+  # second budget while using 100 MB. That is a timeout waiting for the first
+  # run that also has reanalysis to fetch. More memory costs no more here,
+  # because the bill is memory multiplied by duration and the duration falls by
+  # about as much as the memory rises.
+  memory_size = 2048
 
   # Load-bearing, not tuning. See the comment at the top of this file.
   reserved_concurrent_executions = 1
