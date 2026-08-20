@@ -10,10 +10,11 @@
 # produced "no credentials" at runtime.
 locals {
   runtime_environment = {
-    STRAVA_SECRET_ARN  = aws_secretsmanager_secret.strava.arn
-    LIVE_AI_ENABLED    = "false"
-    APP_DATA_BUCKET    = aws_s3_bucket.app_data.id
-    CALIBRATION_S3_KEY = "calibration.json"
+    STRAVA_SECRET_ARN         = aws_secretsmanager_secret.strava.arn
+    LIVE_AI_ENABLED           = var.enable_bedrock ? "true" : "false"
+    WINDCHASER_BRIEFING_MODEL = var.briefing_model
+    APP_DATA_BUCKET           = aws_s3_bucket.app_data.id
+    CALIBRATION_S3_KEY        = "calibration.json"
   }
 }
 
