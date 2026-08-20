@@ -12,6 +12,22 @@ locals {
     "${var.resource_prefix}-tfstate-${data.aws_caller_identity.current.account_id}"
   )
   repo = "${var.github_owner}/${var.github_repository}"
+
+  # GitHub presents an ID-qualified subject claim:
+  #   repo:<owner>@<owner_id>/<repo>@<repo_id>:environment:<name>
+  # The numeric IDs are immutable, so a deleted-and-recreated repository of the
+  # same name cannot inherit this trust. Both forms are accepted because the
+  # legacy format is still what most documentation shows, and a rollout that
+  # flips either way must not lock CI out of the account.
+  subject_owners = [
+    "repo:${var.github_owner}/${var.github_repository}",
+    "repo:${var.github_owner}@*/${var.github_repository}@*",
+  ]
+
+  subjects = {
+    for scope in ["pull_request", "ref:refs/heads/main", "environment:development", "environment:production"] :
+    scope => [for owner in local.subject_owners : "${owner}:${scope}"]
+  }
 }
 
 # ---------------------------------------------------------------- state --
@@ -137,12 +153,7 @@ data "aws_iam_policy_document" "assume_plan" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values = [
-        "repo:${local.repo}:pull_request",
-        "repo:${local.repo}:ref:refs/heads/main",
-        "repo:${local.repo}:environment:development",
-        "repo:${local.repo}:environment:production",
-      ]
+      values   = flatten(values(local.subjects))
     }
   }
 }
@@ -164,9 +175,9 @@ data "aws_iam_policy_document" "assume_apply_development" {
     }
 
     condition {
-      test     = "StringEquals"
+      test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${local.repo}:environment:development"]
+      values   = local.subjects["environment:development"]
     }
   }
 }
@@ -188,9 +199,9 @@ data "aws_iam_policy_document" "assume_apply_production" {
     }
 
     condition {
-      test     = "StringEquals"
+      test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${local.repo}:environment:production"]
+      values   = local.subjects["environment:production"]
     }
   }
 }
