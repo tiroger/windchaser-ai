@@ -25,9 +25,13 @@ resource "aws_sqs_queue" "events" {
   message_retention_seconds = var.raw_event_retention_days * 24 * 60 * 60
   sqs_managed_sse_enabled   = true
 
-  # Long enough for a worker to fetch an activity and its efforts from Strava,
-  # including a rate-limit backoff, before the message becomes visible again.
-  visibility_timeout_seconds = 180
+  # Derived from the worker's timeout rather than chosen, because Lambda refuses
+  # to attach an event source whose queue can return a message while the
+  # function that took it is still running -- "visibility timeout is less than
+  # function timeout", which is how this was found. AWS suggests six times the
+  # function timeout, which also spaces out retries of a message that failed
+  # because Strava's quota was spent, and by then it may not be.
+  visibility_timeout_seconds = var.worker_timeout_seconds * 6
 
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.dead_letter.arn

@@ -108,3 +108,23 @@ variable "log_retention_days" {
   type        = number
   default     = 14
 }
+
+variable "worker_timeout_seconds" {
+  description = <<-EOT
+    How long the worker may run.
+
+    Sized for the slower of its two paths: the scheduled rebuild, which fetches
+    reanalysis for any cell-month it still needs before fitting power across
+    every recorded attempt. Ingestion finishes in seconds.
+
+    The queue's visibility timeout is derived from this at six times over, so
+    the two cannot drift into the combination Lambda rejects.
+  EOT
+  type        = number
+  default     = 300
+
+  validation {
+    condition     = var.worker_timeout_seconds >= 30 && var.worker_timeout_seconds <= 900
+    error_message = "Lambda allows between 1 and 900 seconds; below 30 the rebuild cannot finish."
+  }
+}

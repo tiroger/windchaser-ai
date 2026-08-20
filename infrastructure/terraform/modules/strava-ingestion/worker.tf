@@ -122,9 +122,8 @@ resource "aws_lambda_function" "worker" {
   filename         = data.archive_file.worker.output_path
   source_code_hash = data.archive_file.worker.output_base64sha256
 
-  # Rebuilding the calibration fits power across every recorded attempt, which
-  # is seconds of arithmetic; the archive requests around it are the slow part.
-  timeout     = 300
+  # The queue's visibility timeout is derived from this; see the variable.
+  timeout     = var.worker_timeout_seconds
   memory_size = 512
 
   # Load-bearing, not tuning. See the comment at the top of this file.
