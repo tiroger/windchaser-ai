@@ -22,8 +22,14 @@ export default function Page() {
   // null means "follow the automatic choice"; a value means the rider picked.
   const [regionOverride, setRegionOverride] = useState<string | null>(null);
   const [hourOverride, setHourOverride] = useState<number | null>(null);
-  // Captured once at mount: reading the clock during render is impure.
-  const [mountedAt] = useState(() => Date.now());
+  // Reading the clock during render is impure, so it lives in state and ticks
+  // on an interval. That keeps "now" genuinely now on a page left open, rather
+  // than frozen at whenever it was loaded.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
   const [theme, setTheme] = useTheme();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [briefing, setBriefing] = useState<Briefing | null>(null);
@@ -97,15 +103,15 @@ export default function Page() {
     return first?.timezone ?? "UTC";
   }, [segments, cellForSegment]);
 
-  // Default to the next whole hour rather than the start of the forecast file.
-  const defaultHourIndex = useMemo(() => {
+  /** The hour the rider is actually in, or the closest the forecast covers. */
+  const nowIndex = useMemo(() => {
     if (times.length === 0) return 0;
-    const idx = times.findIndex((t) => new Date(t).getTime() >= mountedAt);
-    return idx >= 0 ? idx : 0;
-  }, [times, mountedAt]);
+    const idx = times.findIndex((t) => new Date(t).getTime() >= nowMs);
+    return idx >= 0 ? idx : times.length - 1;
+  }, [times, nowMs]);
 
   const hourIndex = Math.min(
-    hourOverride ?? defaultHourIndex,
+    hourOverride ?? nowIndex,
     Math.max(0, times.length - 1),
   );
 
@@ -354,7 +360,9 @@ export default function Page() {
             times={times}
             scores={scoreCurve}
             hourIndex={hourIndex}
+            nowIndex={nowIndex}
             onChange={setHourOverride}
+            onReturnToNow={() => setHourOverride(null)}
             timezone={timezone}
           />
         </main>

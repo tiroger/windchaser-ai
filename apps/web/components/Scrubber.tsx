@@ -17,16 +17,21 @@ export default function Scrubber({
   times,
   scores,
   hourIndex,
+  nowIndex,
   onChange,
+  onReturnToNow,
   timezone,
 }: {
   times: string[];
   scores: Array<number | null>;
   hourIndex: number;
+  nowIndex: number;
   onChange: (index: number) => void;
+  onReturnToNow: () => void;
   timezone: string;
 }) {
   const current = times[hourIndex] ? new Date(times[hourIndex]) : null;
+  const atNow = hourIndex === nowIndex;
 
   const dayBoundaries = useMemo(() => {
     const marks: Array<{ index: number; label: string }> = [];
@@ -60,6 +65,20 @@ export default function Scrubber({
             : "—"}
         </span>
         <span className="mono label">{timezone}</span>
+        {!atNow && (
+          <button className="now-button" onClick={onReturnToNow}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M11 5 4 12l7 7M20 12H4.6"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            Back to now
+          </button>
+        )}
       </div>
 
       <div className="scrubber-track">
@@ -76,6 +95,10 @@ export default function Scrubber({
                 background: heatColour(s),
                 outline: i === hourIndex ? "2px solid var(--accent)" : "none",
                 outlineOffset: "-2px",
+                // A separate mark for the present hour, so the distance between
+                // where you are looking and now stays readable.
+                boxShadow:
+                  i === nowIndex ? "inset 0 3px 0 0 var(--ink-2)" : undefined,
               }}
             />
           ))}
