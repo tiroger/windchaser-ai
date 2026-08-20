@@ -87,6 +87,16 @@ module "strava_ingestion" {
 
   # Alarms are pointless without somewhere to send them.
   alarm_topic_arn = module.observability.alert_topic_arn
+
+  # The worker reads rides from Strava and writes both the effort history and
+  # the rebuilt calibration, so it needs the same secret and bucket the web
+  # runtime uses. It writes the calibration key the application already reads,
+  # which is what closes the loop without a deployment.
+  source_root         = "${path.root}/../../../.."
+  strava_secret_arn   = module.web.strava_secret_arn
+  app_data_bucket     = module.web.app_data_bucket
+  app_data_bucket_arn = module.web.app_data_bucket_arn
+  log_retention_days  = 14
 }
 
 module "web_firewall" {

@@ -47,3 +47,64 @@ variable "alarm_topic_arn" {
   type        = string
   default     = null
 }
+
+variable "source_root" {
+  description = <<-EOT
+    Repository root, from which the worker's Python is zipped.
+
+    Terraform builds the deployment package itself rather than consuming one
+    from a build step: it is pure Python against the standard library and the
+    boto3 the Lambda runtime provides, so there is nothing to compile or
+    install, and no opportunity for the artefact to differ from the reviewed
+    source.
+  EOT
+  type        = string
+}
+
+variable "strava_secret_arn" {
+  description = "Secret holding the Strava credentials the worker reads and may rotate."
+  type        = string
+}
+
+variable "app_data_bucket" {
+  description = "Bucket holding the effort history and the calibration."
+  type        = string
+}
+
+variable "app_data_bucket_arn" {
+  description = "ARN of that bucket, for the worker's object permissions."
+  type        = string
+}
+
+variable "efforts_s3_key" {
+  description = "Object holding the accumulated effort history."
+  type        = string
+  default     = "efforts.json"
+}
+
+variable "calibration_s3_key" {
+  description = <<-EOT
+    Object the web application reads its calibration from. The worker writes
+    the same key the offline script uploads, so a rebuilt calibration reaches
+    the app with no further step.
+  EOT
+  type        = string
+  default     = "calibration.json"
+}
+
+variable "refresh_schedule" {
+  description = <<-EOT
+    How often to attach newly available reanalysis weather and rebuild.
+
+    Daily is generous for a source that updates once a day and trails by about
+    a week; more often would mostly re-fetch months already held.
+  EOT
+  type        = string
+  default     = "rate(1 day)"
+}
+
+variable "log_retention_days" {
+  description = "Retention for the worker's logs."
+  type        = number
+  default     = 14
+}

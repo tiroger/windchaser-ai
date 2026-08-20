@@ -48,6 +48,11 @@ output "app_data_bucket" {
   value       = aws_s3_bucket.app_data.id
 }
 
+output "app_data_bucket_arn" {
+  description = "ARN of that bucket, for granting object access outside this module."
+  value       = aws_s3_bucket.app_data.arn
+}
+
 output "compute_role_name" {
   description = "Name of the SSR compute role, for attaching further policies."
   value       = aws_iam_role.compute.name

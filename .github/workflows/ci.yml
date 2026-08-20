@@ -95,9 +95,12 @@ jobs:
       - name: Verify Python environment
         run: uv run python --version
 
-      - name: Compile the analytics package and scripts
+      - name: Compile the analytics package, services and scripts
         run: |
-          uv run python -m compileall -q packages/cycling-analytics scripts
+          uv run python -m compileall -q packages/cycling-analytics services scripts
+
+      - name: Strava worker behaviour
+        run: uv run python scripts/test_strava_worker.py
 
       - name: Physics parity with the TypeScript implementation
         run: |
