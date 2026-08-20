@@ -300,6 +300,69 @@ def test_quota_accounting_gates_optional_work() -> None:
         strava._quota = original
 
 
+def test_profiles_are_fetched_for_segments_never_ridden() -> None:
+    store = history()
+    bundle = {
+        "segments": [
+            {"id": 3001, "name": "Ridden often", "effort_count_personal": 40,
+             "points": [[41.0, -73.9], [41.01, -73.9]], "average_grade": 5.0},
+            # Never ridden by this athlete. Strava still has its elevation, and
+            # a real gradient improves the prediction whether or not there is a
+            # record to compare it against.
+            {"id": 3002, "name": "Never ridden", "effort_count_personal": 0,
+             "points": [[41.2, -73.9], [41.21, -73.9]], "average_grade": 9.0},
+        ]
+    }
+    asked: list[int] = []
+    original = strava.altitude_profile
+
+    def fake(sid):
+        asked.append(sid)
+        return {"distance_m": [0, 1000], "altitude_m": [10, 60]}
+
+    strava.altitude_profile = fake
+    try:
+        added = handler.backfill_profiles(store, bundle, limit=10)
+    finally:
+        strava.altitude_profile = original
+
+    assert added == 2, added
+    # Ridden segments first: those have a record, so a better gradient changes
+    # an answer rather than only a picture.
+    assert asked == [3001, 3002], asked
+    assert store["segments"]["3002"]["elevation_profile"]["altitude_m"] == [10, 60]
+
+
+def test_profiles_are_not_refetched() -> None:
+    store = history()
+    store["segments"]["1001"]["elevation_profile"] = {"distance_m": [0, 1], "altitude_m": [0, 1]}
+    bundle = {"segments": [{"id": 1001, "name": "Tracked climb", "effort_count_personal": 40}]}
+    original = strava.altitude_profile
+    strava.altitude_profile = lambda sid: (_ for _ in ()).throw(AssertionError("refetched"))
+    try:
+        assert handler.backfill_profiles(store, bundle, limit=10) == 0
+    finally:
+        strava.altitude_profile = original
+
+
+def test_profiles_stop_at_the_quota_ceiling() -> None:
+    store = history()
+    bundle = {"segments": [
+        {"id": 4000 + i, "name": f"S{i}", "effort_count_personal": i,
+         "points": [[41.0, -73.9], [41.01, -73.9]], "average_grade": 4.0}
+        for i in range(6)
+    ]}
+    original_q, original_p = strava._quota, strava.altitude_profile
+    strava._quota = {"short_used": 2, "short_limit": 100,
+                     "daily_used": 900, "daily_limit": 1000}
+    strava.altitude_profile = lambda sid: {"distance_m": [0, 1], "altitude_m": [0, 1]}
+    try:
+        added = handler.backfill_profiles(store, bundle, limit=10)
+    finally:
+        strava._quota, strava.altitude_profile = original_q, original_p
+    assert added == 0, "past the ceiling, nothing discretionary may run"
+
+
 def main() -> None:
     print("Strava worker")
     for name, fn in sorted(globals().items()):

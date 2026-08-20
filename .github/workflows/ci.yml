@@ -102,6 +102,9 @@ jobs:
       - name: Strava worker behaviour
         run: uv run python scripts/test_strava_worker.py
 
+      - name: Calibration builder behaviour
+        run: uv run python scripts/test_calibration.py
+
       - name: Physics parity with the TypeScript implementation
         run: |
           uv run python - <<'PY'

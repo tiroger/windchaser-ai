@@ -124,8 +124,7 @@ export default function GradientProfile({
   if (!model) {
     return (
       <p className="profile-empty">
-        No elevation profile for {segment.name} yet. The worker collects one
-        segment&rsquo;s history per day, so this fills in on its own.
+        No elevation profile for {segment.name} yet — it is being collected.
       </p>
     );
   }

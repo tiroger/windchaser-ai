@@ -35,6 +35,13 @@ BUNDLE_KEY = os.environ.get("BUNDLE_S3_KEY", "opportunities.json")
 
 CELL_DEG = 0.1
 
+# Elevation profiles are fetched separately from effort history and far more
+# freely, because they cost one call each and are worth more per call than
+# anything else here: the backtest attributes a drop from 72.5s to 52.3s of mean
+# error purely to gradient varying along a segment instead of being one average.
+# Every displayed segment benefits, whether or not the rider has ever ridden it.
+MAX_PROFILES_PER_RUN = int(os.environ.get("MAX_PROFILES_PER_RUN", "25"))
+
 
 def cell_id(lat: float, lon: float) -> str:
     """The forecast cell a point falls in, matching lib/server/weather.ts."""
@@ -134,6 +141,63 @@ def backfill_candidate(payload: dict, bundle: dict) -> dict | None:
     if not candidates:
         return None
     return max(candidates, key=lambda s: s.get("effort_count_personal") or 0)
+
+
+def backfill_profiles(payload: dict, bundle: dict, limit: int) -> int:
+    """Fetch elevation profiles for displayed segments that lack one.
+
+    Separate from the effort-history backfill, and much less rationed. A profile
+    is a single call, it improves the prediction for that segment immediately,
+    and it is what the interface draws the segment's shape from. Rationing it
+    at the same rate as effort history meant a segment the rider was looking at
+    could sit blank for a fortnight waiting behind segments they ride more.
+    """
+    known = payload.setdefault("segments", {})
+    wanted = [
+        s
+        for s in (bundle.get("segments") or [])
+        if not (known.get(str(s.get("id"))) or {}).get("elevation_profile")
+    ]
+    # The rider's own segments first: those are the ones with a record to beat,
+    # so a better gradient changes an answer rather than only a picture.
+    wanted.sort(key=lambda s: -(s.get("effort_count_personal") or 0))
+
+    added = 0
+    for segment in wanted[:limit]:
+        if not strava.discretionary_allowed():
+            print(f"[profiles] stopping at {added}, quota at {strava.quota()}")
+            break
+        segment_id = int(segment["id"])
+        try:
+            profile = strava.altitude_profile(segment_id)
+        except (RateLimited, Unavailable) as exc:
+            print(f"[profiles] {segment.get('name')}: {exc}")
+            break
+        if not profile:
+            continue
+
+        record = known.get(str(segment_id))
+        if record is None:
+            points = segment.get("points") or []
+            if len(points) < 2:
+                continue
+            middle = points[len(points) // 2]
+            record = {
+                "id": segment_id,
+                "name": segment.get("name"),
+                "distance_m": segment.get("distance_m"),
+                "average_grade": segment.get("average_grade"),
+                "pr_elapsed_time": segment.get("pr_elapsed_time"),
+                "cell_id": segment.get("cell_id") or cell_id(middle[0], middle[1]),
+                "points": points,
+            }
+            known[str(segment_id)] = record
+        record["elevation_profile"] = profile
+        added += 1
+
+    if added:
+        print(f"[profiles] added {added} elevation profiles")
+    return added
 
 
 def backfill_segment(payload: dict, segment: dict) -> int:
@@ -285,9 +349,14 @@ def refresh(_event=None, _context=None):
     # never be the call that leaves the application unable to refresh the
     # segments the rider did ask for.
     backfilled = 0
+    profiles = 0
     try:
         if strava.discretionary_allowed():
             bundle = store.load(BUNDLE_KEY)
+            # Profiles first. They are the cheaper call and the larger gain, so
+            # if the run has budget for only one of the two, this is the one
+            # worth spending it on.
+            profiles = backfill_profiles(payload, bundle, MAX_PROFILES_PER_RUN)
             candidate = backfill_candidate(payload, bundle)
             if candidate and strava.discretionary_allowed():
                 backfilled = backfill_segment(payload, candidate)
@@ -300,7 +369,7 @@ def refresh(_event=None, _context=None):
 
     attached = attach_weather(payload)
 
-    if attached or backfilled:
+    if attached or backfilled or profiles:
         payload["generated_at"] = datetime.now(timezone.utc).strftime(
             "%Y-%m-%dT%H:%M:%SZ"
         )
@@ -323,6 +392,7 @@ def refresh(_event=None, _context=None):
     )
     return {
         "weather_attached": attached,
+        "profiles_added": profiles,
         "segments_backfilled": 1 if backfilled else 0,
         "efforts_backfilled": backfilled,
         "segments": len(calibration["segments"]),

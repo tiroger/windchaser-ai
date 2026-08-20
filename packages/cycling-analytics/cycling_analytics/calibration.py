@@ -110,11 +110,21 @@ def build_calibration(payload: dict) -> dict:
     rider_curve = fit_rider_model(curve_samples)
     base = physics.rider(0.0) if physics else Rider()
 
+    # Every segment with something worth shipping: recorded efforts, an
+    # elevation profile, or both. A profile alone is worth an entry -- it makes
+    # gradient vary along the segment instead of being one average, which the
+    # backtest scores as the single largest improvement available, and it is
+    # what the interface draws the segment's shape from.
+    relevant = sorted(set(by_segment) | {
+        sid for sid, seg in segments.items() if seg.get("elevation_profile")
+    })
+
     out: dict[str, dict] = {}
-    for sid, efforts in by_segment.items():
+    for sid in relevant:
         seg = segments.get(sid)
         if not seg:
             continue
+        efforts = by_segment.get(sid, [])
         profile = downsample(seg.get("elevation_profile"))
         attempts = attempts_only(efforts)
 
