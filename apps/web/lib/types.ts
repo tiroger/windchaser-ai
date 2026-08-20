@@ -22,6 +22,19 @@ export interface Segment {
   points: LatLon[];
   region_id: string;
   cell_id: string;
+  /** Power fitted across recorded attempts in their real weather, when known. */
+  calibrated_power_w?: number | null;
+  /** How many attempts the fit is based on. */
+  attempt_count?: number | null;
+  /** Best moving time on record. Like-for-like with a predicted moving time. */
+  best_moving_time_s?: number | null;
+  /** Real gradient profile, so grade varies along the segment. */
+  elevation_profile?: ElevationProfile | null;
+}
+
+export interface ElevationProfile {
+  distance_m: number[];
+  altitude_m: number[];
 }
 
 export interface ForecastCell {
@@ -83,6 +96,7 @@ export interface SectionResult {
   offset_m: number;
   distance_m: number;
   bearing_deg: number;
+  grade: number;
   tailwind_ms: number;
   crosswind_ms: number;
   speed_ms: number;

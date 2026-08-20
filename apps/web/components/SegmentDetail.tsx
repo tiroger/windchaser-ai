@@ -11,7 +11,8 @@ export default function SegmentDetail({
   segment: Segment;
   evaluation: Evaluation;
 }) {
-  const pr = segment.pr_elapsed_time;
+  const pr = segment.best_moving_time_s ?? segment.pr_elapsed_time;
+  const prIsMoving = Boolean(segment.best_moving_time_s);
   const delta = pr ? evaluation.predicted_time_s - pr : null;
   const bars = breakdown(evaluation);
   const gated = evaluation.gates.length > 0;
@@ -41,7 +42,7 @@ export default function SegmentDetail({
           </span>
         </div>
         <div className="stat-row">
-          <span className="k">Your PR</span>
+          <span className="k">{prIsMoving ? "Best moving time" : "Your PR"}</span>
           <span className="v">{pr ? formatDuration(pr) : "none recorded"}</span>
         </div>
         {delta !== null && (
@@ -61,6 +62,14 @@ export default function SegmentDetail({
             {evaluation.p_beat === null
               ? "—"
               : `${Math.round(evaluation.p_beat * 100)}%`}
+          </span>
+        </div>
+        <div className="stat-row">
+          <span className="k">Model</span>
+          <span className="v" style={{ fontSize: "0.78rem" }}>
+            {segment.calibrated_power_w
+              ? `${Math.round(evaluation.calibrated_power_w)} W from ${segment.attempt_count} attempts`
+              : `${Math.round(evaluation.calibrated_power_w)} W from your PR`}
           </span>
         </div>
         <div className="stat-row">
@@ -198,8 +207,9 @@ export default function SegmentDetail({
             marginBottom: 0,
           }}
         >
-          {evaluation.sections.length} sections, each scored on its own bearing.
-          Times are summed, never averaged as wind.
+          {evaluation.sections.length} sections, each scored on its own bearing
+          {segment.elevation_profile ? " and gradient" : ""}. Times are summed,
+          never averaged as wind.
         </p>
       </div>
     </div>

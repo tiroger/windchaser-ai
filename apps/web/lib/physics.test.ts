@@ -184,3 +184,55 @@ test("power calibration reproduces the rider's PR in still air", () => {
     `still-air time ${stillAir.toFixed(1)}s should match the 600s PR`,
   );
 });
+
+test("elevation profile drives per-section gradient", () => {
+  // A 1 km segment climbing 50 m in its second half only.
+  const points: Array<[number, number]> = Array.from({ length: 100 }, (_, i) => [
+    41.0 + i * 0.00009,
+    -73.9,
+  ]);
+  const flat = toSections(points, 0, null);
+  const profiled = toSections(points, 0, {
+    distance_m: [0, 500, 1000],
+    altitude_m: [0, 0, 50],
+  });
+
+  assert.ok(flat.every((s) => s.grade === 0), "no profile means flat");
+  const first = profiled[0].grade;
+  const last = profiled[profiled.length - 1].grade;
+  assert.ok(Math.abs(first) < 0.01, `first half should be flat, got ${first}`);
+  assert.ok(last > 0.05, `second half should climb, got ${last}`);
+});
+
+test("calibrated power from history overrides the PR fallback", () => {
+  const base = {
+    id: 515151,
+    name: "Fitted fixture",
+    source: "starred" as const,
+    distance_m: 2000,
+    average_grade: 0,
+    maximum_grade: 0,
+    elevation_high: 10,
+    elevation_low: 10,
+    total_elevation_gain: 0,
+    climb_category: 0,
+    city: null,
+    state: null,
+    effort_count: null,
+    athlete_count: null,
+    star_count: null,
+    pr_elapsed_time: 300,
+    pr_date: null,
+    effort_count_personal: null,
+    points: Array.from({ length: 60 }, (_, i) => [41 + i * 0.0003, -73.9]) as Array<
+      [number, number]
+    >,
+    region_id: "r0",
+    cell_id: "41.00,-73.90",
+  };
+
+  const fromPr = calibratedPower({ ...base, id: 515151 });
+  const fitted = calibratedPower({ ...base, id: 515152, calibrated_power_w: 190 });
+  assert.equal(fitted, 190, "an explicit fit must win");
+  assert.notEqual(fromPr, 190, "the PR fallback should differ from the fit");
+});

@@ -147,7 +147,6 @@ export function hourFromCell(cell: ForecastCell, index: number): HourWeather {
 function ridePolyline(
   sections: ReturnType<typeof toSections>,
   rider: Rider,
-  grade: number,
   rho: number,
   windTo: number,
   windSpeed: number,
@@ -162,13 +161,14 @@ function ridePolyline(
     const delta = toRad(angleDelta(windTo, s.bearing_deg));
     const tail = windSpeed * Math.cos(delta);
     const cross = Math.abs(windSpeed * Math.sin(delta));
-    const speed = sectionSpeed(rider, -tail, grade, rho);
+    const speed = sectionSpeed(rider, -tail, s.grade, rho);
     const t = s.distance_m / speed;
 
     results.push({
       offset_m: dist,
       distance_m: s.distance_m,
       bearing_deg: s.bearing_deg,
+      grade: s.grade,
       tailwind_ms: tail,
       crosswind_ms: cross,
       speed_ms: speed,
@@ -190,7 +190,11 @@ const sectionCache = new Map<number, ReturnType<typeof toSections>>();
 export function sectionsFor(segment: Segment) {
   let cached = sectionCache.get(segment.id);
   if (!cached) {
-    cached = toSections(segment.points);
+    cached = toSections(
+      segment.points,
+      segment.average_grade ?? 0,
+      segment.elevation_profile,
+    );
     sectionCache.set(segment.id, cached);
   }
   return cached;
@@ -219,7 +223,12 @@ export function calibratedPower(
   segment: Segment,
   rider: Rider = DEFAULT_RIDER,
 ): number {
-  const pr = segment.pr_elapsed_time;
+  // Fitted across many attempts in their real weather when available. Backtests
+  // roughly halve prediction error against the single-PR fallback below, and
+  // remove an 81 second optimism bias. See scripts/evaluate_calibration.py.
+  if (segment.calibrated_power_w) return segment.calibrated_power_w;
+
+  const pr = segment.best_moving_time_s ?? segment.pr_elapsed_time;
   if (!pr || pr <= 0) return rider.power_w;
 
   const cached = powerCache.get(segment.id);
@@ -227,14 +236,13 @@ export function calibratedPower(
 
   const sections = sectionsFor(segment);
   if (sections.length === 0) return rider.power_w;
-  const grade = (segment.average_grade ?? 0) / 100;
 
   const timeAt = (power: number) =>
     sections.reduce(
       (acc, s) =>
         acc +
         s.distance_m /
-          sectionSpeed({ ...rider, power_w: power }, 0, grade, RHO_REFERENCE),
+          sectionSpeed({ ...rider, power_w: power }, 0, s.grade, RHO_REFERENCE),
       0,
     );
 
@@ -263,15 +271,14 @@ export function evaluate(
   };
   const w = hourFromCell(cell, hourIndex);
   const rho = airDensity(w.temperature_c, w.pressure_hpa, w.humidity_pct);
-  const grade = (segment.average_grade ?? 0) / 100;
   const sections = sectionsFor(segment);
 
   // Meteorological convention: reported direction is where wind comes from.
   const windTo = (w.wind_from_deg + 180) % 360;
   const windSpeed = windAtRiderHeight(w.wind_speed_ms);
 
-  const ride = ridePolyline(sections, rider, grade, rho, windTo, windSpeed);
-  const still = ridePolyline(sections, rider, grade, rho, windTo, 0);
+  const ride = ridePolyline(sections, rider, rho, windTo, windSpeed);
+  const still = ridePolyline(sections, rider, rho, windTo, 0);
 
   const effectiveTailwind = ride.dist > 0 ? ride.tailSum / ride.dist : 0;
   const meanCrosswind = ride.dist > 0 ? ride.crossSum / ride.dist : 0;
@@ -281,11 +288,10 @@ export function evaluate(
   // through which confidence affects the score.
   const gustHeadroom = Math.max(0, w.gust_ms - w.wind_speed_ms);
   const windSigma = windAtRiderHeight(gustHeadroom * 0.5 + w.wind_speed_ms * 0.12);
-  const high = ridePolyline(sections, rider, grade, rho, windTo, windSpeed + windSigma);
+  const high = ridePolyline(sections, rider, rho, windTo, windSpeed + windSigma);
   const low = ridePolyline(
     sections,
     rider,
-    grade,
     rho,
     windTo,
     Math.max(0, windSpeed - windSigma),
@@ -297,13 +303,21 @@ export function evaluate(
   // in until real effort history is available; see section 9, prediction
   // evolution. Effort variability dominates: riders vary several percent
   // between attempts.
-  const modelSigma = ride.time_s * 0.03;
-  const effortSigma = ride.time_s * 0.05;
+  // Backtested residual against held-out attempts was ~5% of elapsed time with
+  // a fitted power, versus much wider when guessing from a single PR. Segments
+  // without a fit keep the pessimistic prior.
+  const calibrated = Boolean(segment.calibrated_power_w);
+  const modelSigma = ride.time_s * (calibrated ? 0.025 : 0.03);
+  const effortSigma = ride.time_s * (calibrated ? 0.04 : 0.05);
   const sigma = Math.sqrt(
     windTimeSigma ** 2 + modelSigma ** 2 + effortSigma ** 2,
   );
 
-  const target = segment.pr_elapsed_time;
+  // Prefer the best moving time: the model predicts moving time, and Strava's
+  // PR is elapsed. They agree on most segments because PR runs are clean, but
+  // they diverge where the rider stopped, and the honest comparison is
+  // like-for-like.
+  const target = segment.best_moving_time_s ?? segment.pr_elapsed_time;
   const pBeat =
     target && sigma > 0 ? normalCdf((target - ride.time_s) / sigma) : null;
   const margin = target

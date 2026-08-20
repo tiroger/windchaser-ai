@@ -53,3 +53,8 @@ apps/web/fixtures/opportunities.json
 
 # Vendored MapLibre worker bundle, synced from node_modules by predev/prebuild.
 apps/web/public/maplibre-gl-*.mjs
+
+# Effort history and derived calibration. Real ride timestamps, locations and
+# power data. Regenerate with scripts/fetch_effort_history.py + build_calibration.py
+data/training/
+apps/web/fixtures/calibration.json

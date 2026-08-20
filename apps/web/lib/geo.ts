@@ -1,4 +1,4 @@
-import type { LatLon } from "./types";
+import type { ElevationProfile, LatLon } from "./types";
 
 const R_EARTH = 6371000;
 
@@ -29,33 +29,70 @@ export function bearingDeg(a: LatLon, b: LatLon): number {
 export interface Section {
   distance_m: number;
   bearing_deg: number;
+  /** Rise over run for this section, from the profile when one exists. */
+  grade: number;
   mid: LatLon;
+}
+
+/** Altitude at a distance along the segment, linearly interpolated. */
+function altitudeAt(profile: ElevationProfile, target: number): number {
+  const { distance_m: d, altitude_m: a } = profile;
+  if (target <= d[0]) return a[0];
+  if (target >= d[d.length - 1]) return a[a.length - 1];
+  let lo = 0;
+  let hi = d.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (d[mid] <= target) lo = mid;
+    else hi = mid;
+  }
+  const span = d[hi] - d[lo];
+  if (span <= 0) return a[lo];
+  return a[lo] + ((a[hi] - a[lo]) * (target - d[lo])) / span;
 }
 
 /**
  * Resample a polyline into sections short enough that bearing is roughly
  * constant within each, per section 9 of the project plan.
  */
-export function toSections(points: LatLon[], targetLen = 80): Section[] {
+export function toSections(
+  points: LatLon[],
+  averageGrade = 0,
+  profile?: ElevationProfile | null,
+  targetLen = 80,
+): Section[] {
   const sections: Section[] = [];
   if (points.length < 2) return sections;
 
+  const usable =
+    profile && profile.distance_m.length > 1 &&
+    profile.distance_m.length === profile.altitude_m.length
+      ? profile
+      : null;
+
   let anchor = points[0];
   let accum = 0;
+  let travelled = 0;
 
   for (let i = 1; i < points.length; i++) {
     const d = haversineM(points[i - 1], points[i]);
     if (!Number.isFinite(d) || d === 0) continue;
     accum += d;
     if (accum >= targetLen || i === points.length - 1) {
+      const grade = usable
+        ? (altitudeAt(usable, travelled + accum) - altitudeAt(usable, travelled)) /
+          accum
+        : averageGrade / 100;
       sections.push({
         distance_m: accum,
         bearing_deg: bearingDeg(anchor, points[i]),
+        grade,
         mid: [
           (anchor[0] + points[i][0]) / 2,
           (anchor[1] + points[i][1]) / 2,
         ],
       });
+      travelled += accum;
       anchor = points[i];
       accum = 0;
     }

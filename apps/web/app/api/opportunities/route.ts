@@ -38,6 +38,48 @@ function readFixtures(): Bundle {
   return JSON.parse(readFileSync(path, "utf8")) as Bundle;
 }
 
+interface CalibrationEntry {
+  segment_id: number;
+  power_w: number | null;
+  attempt_count: number | null;
+  best_moving_time_s: number | null;
+  elevation_profile: Segment["elevation_profile"];
+}
+
+let calibrationCache: Record<string, CalibrationEntry> | null = null;
+
+/**
+ * Power fitted across recorded attempts, plus real elevation profiles.
+ * Produced offline by scripts/build_calibration.py because it needs the
+ * rider's full effort history and reanalysis weather.
+ */
+function readCalibration(): Record<string, CalibrationEntry> {
+  if (calibrationCache) return calibrationCache;
+  try {
+    const path = join(process.cwd(), "fixtures", "calibration.json");
+    const parsed = JSON.parse(readFileSync(path, "utf8")) as {
+      segments: Record<string, CalibrationEntry>;
+    };
+    calibrationCache = parsed.segments ?? {};
+  } catch {
+    calibrationCache = {};
+  }
+  return calibrationCache;
+}
+
+/** Attach the fit to each segment; segments without one keep the PR fallback. */
+function applyCalibration(segments: Segment[]): void {
+  const calibration = readCalibration();
+  for (const seg of segments) {
+    const entry = calibration[String(seg.id)];
+    if (!entry) continue;
+    seg.calibrated_power_w = entry.power_w ?? null;
+    seg.attempt_count = entry.attempt_count ?? null;
+    seg.best_moving_time_s = entry.best_moving_time_s ?? null;
+    seg.elevation_profile = entry.elevation_profile ?? null;
+  }
+}
+
 async function loadStarred(): Promise<SegmentCache> {
   if (starredCache && Date.now() - starredCache.fetchedAt < STARRED_TTL_MS) {
     return starredCache;
@@ -90,6 +132,7 @@ export async function GET(request: Request) {
 
   if (!hasStravaCredentials()) {
     const bundle = readFixtures();
+    applyCalibration(bundle.segments);
     return Response.json({
       ...bundle,
       live: false,
@@ -174,6 +217,7 @@ export async function GET(request: Request) {
       const m = mid(seg);
       seg.cell_id = cellId(cellOf(m[0], m[1]));
     }
+    applyCalibration(all);
     const forecastCells = await fetchCells(
       all.map((s) => {
         const m = mid(s);
@@ -197,6 +241,7 @@ export async function GET(request: Request) {
     const message = error instanceof Error ? error.message : "Unknown error";
     try {
       const bundle = readFixtures();
+      applyCalibration(bundle.segments);
       return Response.json({
         ...bundle,
         live: false,
