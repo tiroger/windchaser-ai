@@ -5,6 +5,18 @@ import type { LatLon, Segment } from "../types";
 import { stravaConfig } from "./env";
 
 const API = "https://www.strava.com/api/v3";
+
+/**
+ * Distinguishable so callers can tell "this one segment is unreadable" from
+ * "Strava has stopped answering". Swallowing the second as if it were the first
+ * returns a nearly empty list while still reporting it as live data.
+ */
+export class StravaRateLimitError extends Error {
+  constructor() {
+    super("Strava rate limit reached. Try again in a few minutes.");
+    this.name = "StravaRateLimitError";
+  }
+}
 const TOKEN_URL = "https://www.strava.com/oauth/token";
 
 interface TokenState {
@@ -46,7 +58,7 @@ async function api<T>(path: string): Promise<T> {
     cache: "no-store",
   });
   if (res.status === 429) {
-    throw new Error("Strava rate limit reached. Try again in a few minutes.");
+    throw new StravaRateLimitError();
   }
   if (!res.ok) {
     throw new Error(`Strava ${res.status} on ${path}`);
@@ -160,23 +172,44 @@ export async function fetchAthlete() {
   }>("/athlete");
 }
 
+/**
+ * A partial result is worse than no result: it looks like the rider suddenly
+ * has one starred segment rather than like a failed fetch, and it poisons the
+ * cache with that for an hour. So a rate limit propagates, and losing most of
+ * the list is treated as failure even if every individual error looked benign.
+ */
+const MAX_TOLERATED_DETAIL_FAILURE = 0.25;
+
 export async function fetchStarredSegments(): Promise<Segment[]> {
   const out: Segment[] = [];
+  let attempted = 0;
+  let failed = 0;
+
   for (let page = 1; page <= 5; page++) {
     const batch = await api<Array<{ id: number }>>(
       `/segments/starred?per_page=100&page=${page}`,
     );
     if (batch.length === 0) break;
     for (const summary of batch) {
+      attempted++;
       try {
         const detail = await api<StravaSegmentDetail>(`/segments/${summary.id}`);
         const record = normalize(detail, "starred");
         if (record) out.push(record);
-      } catch {
-        // A single unreadable segment must not fail the whole request.
+      } catch (error) {
+        // Strava having stopped answering is not one bad segment.
+        if (error instanceof StravaRateLimitError) throw error;
+        failed++;
       }
     }
     if (batch.length < 100) break;
+  }
+
+  if (attempted > 0 && failed / attempted > MAX_TOLERATED_DETAIL_FAILURE) {
+    throw new Error(
+      `Strava returned ${failed} of ${attempted} segment details as errors; ` +
+        "treating the fetch as failed rather than serving a partial list.",
+    );
   }
   return out;
 }
@@ -203,8 +236,9 @@ export async function exploreSegments(
       const detail = await api<StravaSegmentDetail>(`/segments/${summary.id}`);
       const record = normalize(detail, "discovered");
       if (record) out.push(record);
-    } catch {
-      // Skip and continue.
+    } catch (error) {
+      if (error instanceof StravaRateLimitError) throw error;
+      // One unreadable discovered segment is genuinely skippable.
     }
   }
   return out;

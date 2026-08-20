@@ -62,10 +62,15 @@ async function loadStarred(): Promise<SegmentCache> {
   if (starredCache && Date.now() - starredCache.fetchedAt < STARRED_TTL_MS) {
     return starredCache;
   }
+  // Both must succeed before anything is cached. A throw here leaves the
+  // previous good cache in place rather than replacing it with a bad one.
   const [athlete, segments] = await Promise.all([
     fetchAthlete(),
     fetchStarredSegments(),
   ]);
+  if (segments.length === 0) {
+    throw new Error("Strava returned no starred segments; not caching that.");
+  }
   starredCache = {
     segments,
     athlete: {
