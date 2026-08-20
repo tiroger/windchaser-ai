@@ -11,6 +11,18 @@
 data "aws_region" "current" {}
 
 data "aws_iam_policy_document" "invoke_bedrock" {
+  # The Anthropic Messages API on Bedrock is a separate service namespace from
+  # classic InvokeModel, with its own action and its own resource shape. The SDK
+  # client used here speaks that endpoint, so granting only bedrock:InvokeModel
+  # produced a permission_error naming an action that does not appear anywhere
+  # in the classic Bedrock docs.
+  statement {
+    sid       = "CreateInferenceOnMessagesApi"
+    effect    = "Allow"
+    actions   = ["bedrock-mantle:CreateInference"]
+    resources = ["arn:aws:bedrock-mantle:*:${data.aws_caller_identity.current.account_id}:project/*"]
+  }
+
   statement {
     sid    = "InvokeAnthropicModels"
     effect = "Allow"
