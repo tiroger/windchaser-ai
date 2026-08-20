@@ -20,6 +20,14 @@ applications:
             - npm ci
         build:
           commands:
+            # Amplify exposes environment variables to the build but not to the
+            # SSR compute runtime, where AWS_REGION is present and nothing of
+            # ours is. Next reads .env.production at build time and carries it
+            # into the server bundle, so writing them there is what makes a
+            # server route see them at request time.
+            # The || true matters: grep exits non-zero when nothing matches, and
+            # a missing optional variable must not fail the build.
+            - env | grep -E '^(STRAVA_SECRET_ARN|LIVE_AI_ENABLED)=' >> .env.production || true
             # prebuild syncs the MapLibre worker into public/, without which the
             # map renders an empty canvas.
             - npm run build
