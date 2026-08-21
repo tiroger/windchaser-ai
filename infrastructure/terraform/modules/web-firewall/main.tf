@@ -53,20 +53,35 @@ resource "aws_wafv2_web_acl" "amplify" {
           }
         }
 
+        # Absent, not merely empty.
+        #
+        # This was written as size EQ 0, which reads as "no user agent" and is
+        # not: WAF cannot measure a field the request does not carry, so a
+        # header that is missing entirely fails the test rather than passing it.
+        # Strava omits the header, so its validation GET was refused with a 403
+        # and the subscription could not be created -- while a hand-made request
+        # with an empty header sailed through and made the rule look correct.
+        #
+        # Negating "longer than nothing" covers both: a missing header does not
+        # match GT 0, and neither does an empty one.
         statement {
-          size_constraint_statement {
-            comparison_operator = "EQ"
-            size                = 0
+          not_statement {
+            statement {
+              size_constraint_statement {
+                comparison_operator = "GT"
+                size                = 0
 
-            field_to_match {
-              single_header {
-                name = "user-agent"
+                field_to_match {
+                  single_header {
+                    name = "user-agent"
+                  }
+                }
+
+                text_transformation {
+                  priority = 0
+                  type     = "NONE"
+                }
               }
-            }
-
-            text_transformation {
-              priority = 0
-              type     = "NONE"
             }
           }
         }
