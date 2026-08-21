@@ -20,13 +20,17 @@ imports the analytics package from this repository.
       "command": "python3",
       "args": ["/absolute/path/to/windchaser-ai/mcp/server.py"],
       "env": {
-        "WINDCHASER_BUCKET": "windchaser-dev-data-755319535705",
-        "AWS_PROFILE": "personal-admin"
+        "WINDCHASER_BUCKET": "<your app data bucket>",
+        "AWS_PROFILE": "<your aws profile>"
       }
     }
   }
 }
 ```
+
+Both values are specific to your account, which is why they are placeholders in
+a public repository. `terraform output` in `infrastructure/terraform/environments/dev`
+prints the bucket; `.mcp.json.example` shows the same shape.
 
 `WINDCHASER_BUCKET` is optional. With it, the server refreshes the calibration
 from S3 through the AWS CLI, so a rebuild reaches your questions without a

@@ -64,3 +64,7 @@ apps/web/fixtures/calibration.json
 # every plan, so committing it adds a binary that changes with every edit and
 # means nothing on its own.
 .terraform-build/
+
+# Local MCP client configuration. Names the app data bucket, which carries the
+# account id, and this repository is public. .mcp.json.example is the shape.
+.mcp.json

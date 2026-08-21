@@ -1,0 +1,19 @@
+{
+  "_comment": [
+    "Copy to .mcp.json and fill in the two values. That copy is gitignored:",
+    "this repository is public, and a bucket name carries the account id.",
+    "Run terraform output in infrastructure/terraform/environments/dev for it.",
+    "Both are optional. Without them the server reads apps/web/fixtures, which",
+    "is as current as the last time you ran scripts/build_calibration.py."
+  ],
+  "mcpServers": {
+    "windchaser": {
+      "command": "python3",
+      "args": ["mcp/server.py"],
+      "env": {
+        "WINDCHASER_BUCKET": "<your app data bucket>",
+        "AWS_PROFILE": "<your aws profile>"
+      }
+    }
+  }
+}
