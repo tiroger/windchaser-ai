@@ -33,6 +33,11 @@ from S3 through the AWS CLI, so a rebuild reaches your questions without a
 redeploy. Without it, the working copy under `apps/web/fixtures` is used, which
 is fine and simply as current as the last time you built it.
 
+`WINDCHASER_FIXTURES` points the server at a different pair of artefacts
+entirely. The real ones hold personal training data and are not in this
+repository, so the tests write their own; the same override lets anyone run this
+against a sample without an athlete's history.
+
 ## What it will not do
 
 It never calls Strava. Their read allowance is a thousand a day and the

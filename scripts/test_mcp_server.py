@@ -10,12 +10,77 @@ tool take down the connection instead of being reported as tool output.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 SERVER = REPO / "mcp" / "server.py"
+
+# The real artefacts hold personal training data and are not in the repository,
+# so the tests bring their own. Nothing below asks a question that needs a
+# forecast, which keeps them off the network and deterministic.
+SYNTHETIC_SEGMENT = {
+    "id": 11,
+    "name": "Test Hill",
+    "source": "starred",
+    "distance_m": 2000.0,
+    "average_grade": 5.0,
+    "maximum_grade": 9.0,
+    "elevation_high": 200.0,
+    "elevation_low": 100.0,
+    "total_elevation_gain": 100.0,
+    "climb_category": 1,
+    "city": "Nowhere",
+    "state": None,
+    "effort_count": 10,
+    "athlete_count": 5,
+    "star_count": 1,
+    "pr_elapsed_time": 600,
+    "pr_date": None,
+    "effort_count_personal": 4,
+    "points": [[41.0 + i * 0.001, -73.9] for i in range(12)],
+    "region_id": "r0",
+    "cell_id": "41.00,-73.90",
+}
+
+
+def fixtures() -> str:
+    """A minimal artefact pair, written somewhere the server can be pointed at."""
+    directory = Path(tempfile.mkdtemp(prefix="windchaser-mcp-"))
+    (directory / "calibration.json").write_text(json.dumps({
+        "generated_at": "2026-08-21T00:00:00Z",
+        "segments": {
+            "11": {
+                "segment_id": 11,
+                "name": "Test Hill",
+                "power_w": 220.0,
+                "attempt_count": 9,
+                "best_moving_time_s": 590,
+                "pr_elapsed_time_s": 600,
+                "elevation_profile": {
+                    "distance_m": [0, 1000, 2000],
+                    "altitude_m": [100, 150, 200],
+                },
+            }
+        },
+        "rider": {
+            "cp_w": 132.0, "w_prime_j": 11000.0, "grade_w": 1250.0,
+            "grade_min": -0.002, "grade_max": 0.059,
+            "mass_kg": 75.9, "cda": 0.259, "attempt_count": 141,
+        },
+    }))
+    (directory / "opportunities.json").write_text(json.dumps({
+        "generated_at": "2026-08-21T00:00:00Z",
+        "segments": [SYNTHETIC_SEGMENT],
+        "forecast_cells": {},
+    }))
+    return str(directory)
+
+
+FIXTURE_DIR = fixtures()
 
 
 class Client:
@@ -27,6 +92,8 @@ class Client:
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
+            env={**os.environ, "WINDCHASER_FIXTURES": FIXTURE_DIR,
+                 "WINDCHASER_BUCKET": ""},
         )
 
     def send(self, message: dict) -> None:
@@ -101,7 +168,9 @@ def test_a_failing_tool_reports_rather_than_dies() -> None:
         assert "content" in reply["result"], reply
         assert "No segment matching" in reply["result"]["content"][0]["text"]
         # The connection must still work afterwards.
-        assert c.call("list_segments", {"search": "hawk"}, request_id=100)["id"] == 100
+        reply = c.call("list_segments", {"search": "Test"}, request_id=100)
+        assert reply["id"] == 100
+        assert "Test Hill" in reply["result"]["content"][0]["text"]
     finally:
         c.close()
 
@@ -126,7 +195,8 @@ def test_nothing_but_protocol_reaches_stdout() -> None:
     c = Client()
     try:
         c.call("list_segments", {})
-        c.call("predict_segment_time", {"segment": "hawk"})
+        # A tool that fails, since a real prediction would need the forecast.
+        c.call("predict_segment_time", {"segment": "nothing called this"})
         c.send({"jsonrpc": "2.0", "id": 9, "method": "ping"})
         # A stray print would have been consumed as one of the replies above and
         # this read would fail or return the wrong id.

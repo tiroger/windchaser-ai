@@ -24,7 +24,12 @@ import urllib.request
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
-FIXTURES = REPO / "apps" / "web" / "fixtures"
+
+# Overridable so the server can be pointed at a different set of artefacts: a
+# synthetic one for the tests, which cannot use the real files because those
+# hold personal training data and are not in the repository, or a public sample
+# for anyone who wants to try this without an athlete's history.
+FIXTURES = Path(os.environ.get("WINDCHASER_FIXTURES") or (REPO / "apps" / "web" / "fixtures"))
 CALIBRATION = FIXTURES / "calibration.json"
 BUNDLE = FIXTURES / "opportunities.json"
 
