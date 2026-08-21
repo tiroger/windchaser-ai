@@ -97,13 +97,16 @@ jobs:
 
       - name: Compile the analytics package, services and scripts
         run: |
-          uv run python -m compileall -q packages/cycling-analytics services scripts
+          uv run python -m compileall -q packages/cycling-analytics services scripts mcp
 
       - name: Strava worker behaviour
         run: uv run python scripts/test_strava_worker.py
 
       - name: Calibration builder behaviour
         run: uv run python scripts/test_calibration.py
+
+      - name: MCP server speaks the protocol
+        run: uv run python scripts/test_mcp_server.py
 
       - name: Physics parity with the TypeScript implementation
         run: |
