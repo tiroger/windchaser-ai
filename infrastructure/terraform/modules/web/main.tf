@@ -17,6 +17,7 @@ locals {
     CALIBRATION_S3_KEY        = "calibration.json"
     BUNDLE_S3_KEY             = "opportunities.json"
     STRAVA_EVENTS_QUEUE_URL   = var.strava_events_queue_url == null ? "" : var.strava_events_queue_url
+    STRAVA_SUBSCRIPTION_ID    = var.strava_subscription_id == null ? "" : var.strava_subscription_id
   }
 }
 

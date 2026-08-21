@@ -101,6 +101,23 @@ variable "strava_events_queue_url" {
   default     = null
 }
 
+variable "strava_subscription_id" {
+  description = <<-EOT
+    The webhook subscription this environment answers for.
+
+    Strava does not sign webhook payloads, so the subscription id on an event is
+    the only thing tying it to us. It is weak evidence and treated as such:
+    events for another subscription are acknowledged and dropped rather than
+    trusted, and nothing downstream believes the body either -- the worker
+    re-fetches the activity from the API.
+
+    Null accepts any subscription, which is right before one exists and wrong
+    afterwards.
+  EOT
+  type        = string
+  default     = null
+}
+
 variable "domain_name" {
   description = <<-EOT
     Custom domain serving the app at both apex and www. Null keeps the app on

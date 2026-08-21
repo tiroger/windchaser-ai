@@ -72,6 +72,10 @@ module "web" {
   # until it does, rather than making Strava retry a configuration problem.
   strava_events_queue_url = module.strava_ingestion.queue_url
 
+  # Created against https://windchaser.io/api/strava/webhook on 2026-08-21.
+  # Strava permits one subscription per application, so this is the only one.
+  strava_subscription_id = "367414"
+
   # Null until the registrar delegates to the zone above. The Amplify URL keeps
   # working throughout, so this is additive rather than a cutover.
   domain_name = local.domain_delegated ? module.dns.domain_name : null
