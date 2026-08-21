@@ -471,6 +471,11 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+.scrubber-legend {
+  margin-left: auto;
+  color: var(--ink-3);
+}
+
 .profile-empty {
   margin: 0;
   padding: 0.8rem 0.9rem;

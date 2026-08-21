@@ -21,6 +21,7 @@ export default function Scrubber({
   onChange,
   onReturnToNow,
   timezone,
+  legend,
 }: {
   times: string[];
   scores: Array<number | null>;
@@ -29,6 +30,8 @@ export default function Scrubber({
   onChange: (index: number) => void;
   onReturnToNow: () => void;
   timezone: string;
+  /** What the colour band is measuring, which changes with the selection. */
+  legend?: string;
 }) {
   const current = times[hourIndex] ? new Date(times[hourIndex]) : null;
   const atNow = hourIndex === nowIndex;
@@ -65,6 +68,7 @@ export default function Scrubber({
             : "—"}
         </span>
         <span className="mono label">{timezone}</span>
+        {legend && <span className="label scrubber-legend">{legend}</span>}
         {!atNow && (
           <button className="now-button" onClick={onReturnToNow}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
