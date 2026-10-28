@@ -43,7 +43,7 @@ export type ActivityRecord = Omit<Activity, "hasRoute"> & {
   polyline: string | null;
 };
 
-type Stored<T> = { etag: string; value: T };
+export type Stored<T> = { etag: string; value: T };
 
 export class ConflictError extends Error {
   constructor(what: string) {
@@ -205,6 +205,7 @@ const objectKeys = {
   streamsIndex: () => process.env.STREAMS_INDEX_S3_KEY ?? "streams-index.json",
   stream: (id: string) => `${process.env.STREAMS_S3_PREFIX ?? "streams/"}${id}.json`,
   savedRoutes: () => process.env.SAVED_ROUTES_S3_KEY ?? "saved-routes.json",
+  efforts: () => process.env.EFFORTS_S3_KEY ?? "efforts.json",
   savedRoute: (id: string) =>
     `${process.env.SAVED_ROUTES_S3_PREFIX ?? "saved-routes/"}${id}.json`,
 };
@@ -295,7 +296,7 @@ async function readLocalCsv(file: string): Promise<Record<string, unknown>[]> {
 
 // ------------------------------------------------------------ objects --
 
-async function loadActivityRecords(): Promise<Stored<ActivityRecord[]>> {
+export async function loadActivityRecords(): Promise<Stored<ActivityRecord[]>> {
   const bucket = dataBucket();
   if (bucket) {
     return readJson(bucket, objectKeys.activities(), arrayOf("Activity", normalizeActivity), []);
@@ -346,6 +347,17 @@ export async function loadStreamsIndex(): Promise<StreamsIndex> {
   }
   const local = await readLocalFile("streams-index.json");
   return local ? (JSON.parse(local) as StreamsIndex) : {};
+}
+
+/**
+ * WindChaser's segment effort history (efforts.json, written by
+ * strava_worker), parsed by the caller. Null before the first sync.
+ */
+export async function loadEffortHistoryObject(): Promise<Stored<unknown>> {
+  const bucket = dataBucket();
+  if (bucket) return readJson(bucket, objectKeys.efforts(), (raw) => raw, null);
+  const local = await readLocalFile("efforts.json");
+  return { etag: "local", value: local ? (JSON.parse(local) as unknown) : null };
 }
 
 export async function loadActivityStream(id: string): Promise<ActivityStream | null> {
