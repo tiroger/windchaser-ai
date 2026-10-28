@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { formatCalendarDate, formatHours, formatNumber } from "@/lib/training/activity-types";
 import type { RouteProfile, SavedRoute } from "@/lib/training/metrics/route-profile";
@@ -22,7 +23,17 @@ const SUB_TYPES: Record<NonNullable<SavedRoute["sub_type"]>, string> = {
  */
 export default function SavedRoutesPanel({ routes }: { routes: SavedRoute[] }) {
   const [query, setQuery] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // The selected route lives in the URL (?route=), so a route can be linked to
+  // and the back button returns to the previous one.
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const selectedId = searchParams.get("route");
+  const setSelectedId = (id: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("route", id);
+    router.push(`${pathname}?${params.toString()}`, { scroll: false });
+  };
   // Profiles by route ID; null marks one that is not available yet.
   const [profiles, setProfiles] = useState<Record<string, RouteProfile | null>>({});
 

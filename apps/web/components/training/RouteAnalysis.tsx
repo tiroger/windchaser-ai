@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 
 import { useTheme } from "@/components/ThemeToggle";
 import { formatNumber } from "@/lib/training/activity-types";
-import { findClimbs, GRADE_SCALE, smoothedGrades } from "@/lib/training/metrics/route-profile";
+import { findClimbs, GRADE_SCALE, gradeWindow, smoothedGrades } from "@/lib/training/metrics/route-profile";
 
 import ElevationProfile from "./ElevationProfile";
 
@@ -25,7 +25,10 @@ export type RouteTrack = {
 
 /** Grade at every point plus a separate half-mile figure for "steepest". */
 export function useTrackAnalysis(track: RouteTrack) {
-  const grades = useMemo(() => smoothedGrades(track.distance, track.altitude), [track]);
+  const grades = useMemo(
+    () => smoothedGrades(track.distance, track.altitude, gradeWindow(track.distance)),
+    [track],
+  );
   const climbs = useMemo(
     () => findClimbs(track.distance, track.altitude, grades),
     [grades, track],
@@ -152,6 +155,7 @@ export default function RouteAnalysis({
           </span>
           {climbs.length ? (
             <div className="t-table-scroll">
+              <div className="t-table-scroll">
               <table className="t-table t-climbs">
                 <thead>
                   <tr>
@@ -200,6 +204,7 @@ export default function RouteAnalysis({
                   })}
                 </tbody>
               </table>
+              </div>
             </div>
           ) : (
             <p className="t-empty">No sustained climbs: nothing gains 150 ft at 3% or steeper.</p>

@@ -35,6 +35,19 @@ const FEET_PER_MILE = 5280;
  * rather than between neighbouring points, which turns GPS altitude noise
  * into absurd spikes on short segments.
  */
+/**
+ * The distance to measure grade over for a given track. Saved-route profiles
+ * are downsampled to a few thousand points, so on a long route neighbours sit
+ * more than a tenth of a mile apart and a single altitude glitch would read as
+ * a wall. Four samples' worth, and never less than a tenth of a mile.
+ */
+export function gradeWindow(distance: number[]): number {
+  const steps = distance.slice(1).map((miles, index) => miles - distance[index]).filter((step) => step > 0);
+  if (!steps.length) return 0.1;
+  steps.sort((a, b) => a - b);
+  return Math.max(0.1, steps[Math.floor(steps.length / 2)] * 4);
+}
+
 export function smoothedGrades(distance: number[], altitude: number[], windowMiles = 0.1): number[] {
   const half = windowMiles / 2;
   const grades: number[] = [];
