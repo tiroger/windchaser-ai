@@ -29,9 +29,46 @@ const client = new SecretsManagerClient({
 });
 let cached: Promise<WebSecret> | undefined;
 
+function parseWebSecret(text: string): WebSecret {
+  const value = JSON.parse(text) as unknown;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("Web secret must contain a JSON object");
+  }
+  const secret = value as Record<string, unknown>;
+  for (const [key, minimum] of Object.entries(minimumLengths)) {
+    const field = secret[key];
+    if (typeof field !== "string" || field.length < minimum) {
+      throw new Error(
+        `Web secret ${key} must be a string of at least ${minimum} characters`,
+      );
+    }
+  }
+  return {
+    admin_passphrase: secret.admin_passphrase as string,
+    admin_session_secret: secret.admin_session_secret as string,
+  };
+}
+
+/**
+ * Local development only: TRAINING_DEV_OWNER_SECRET, a JSON value with the
+ * same two fields, stands in for Secrets Manager when WEB_SECRET_ARN is unset,
+ * so owner-only pages can be exercised under `next dev`. The NODE_ENV check
+ * is replaced with a constant by `next build`, which removes this branch from
+ * every production bundle; a deployment cannot turn it on.
+ */
+function devOwnerSecret(): string | undefined {
+  if (process.env.NODE_ENV !== "development" || process.env.WEB_SECRET_ARN) return undefined;
+  return process.env.TRAINING_DEV_OWNER_SECRET || undefined;
+}
+
 /** Resolves the secret once per container; a failure is retried on the next call. */
 export function getWebSecret(): Promise<WebSecret> {
   if (!cached) {
+    const dev = devOwnerSecret();
+    if (dev) {
+      cached = Promise.resolve().then(() => parseWebSecret(dev));
+      return cached;
+    }
     const secretArn = process.env.WEB_SECRET_ARN;
     if (!secretArn) return Promise.reject(new Error("WEB_SECRET_ARN is not configured"));
     cached = client
@@ -40,23 +77,7 @@ export function getWebSecret(): Promise<WebSecret> {
         if (!response.SecretString) {
           throw new Error("Web secret has no SecretString");
         }
-        const value = JSON.parse(response.SecretString) as unknown;
-        if (typeof value !== "object" || value === null || Array.isArray(value)) {
-          throw new Error("Web secret must contain a JSON object");
-        }
-        const secret = value as Record<string, unknown>;
-        for (const [key, minimum] of Object.entries(minimumLengths)) {
-          const field = secret[key];
-          if (typeof field !== "string" || field.length < minimum) {
-            throw new Error(
-              `Web secret ${key} must be a string of at least ${minimum} characters`,
-            );
-          }
-        }
-        return {
-          admin_passphrase: secret.admin_passphrase as string,
-          admin_session_secret: secret.admin_session_secret as string,
-        };
+        return parseWebSecret(response.SecretString);
       })
       .catch((error: unknown) => {
         cached = undefined;
@@ -67,5 +88,5 @@ export function getWebSecret(): Promise<WebSecret> {
 }
 
 export function webSecretConfigured(): boolean {
-  return Boolean(process.env.WEB_SECRET_ARN);
+  return Boolean(process.env.WEB_SECRET_ARN || devOwnerSecret());
 }
