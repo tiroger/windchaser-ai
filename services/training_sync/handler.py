@@ -898,6 +898,19 @@ def main(event: dict[str, Any], context: Any) -> dict[str, Any]:
         activity for activity in missing
         if activity["id"] not in urgent_ids and (backfill or activity["id"] in wanted)
     ]
+    if backfill:
+        # Rides stored before VO2max existed kept only downsampled samples,
+        # which cannot give it. They are the newest rides -- the backfill runs
+        # newest first -- so the VO2max trend stays empty until they are
+        # fetched again, ahead of older history.
+        optional = _newest_first([
+            activity for activity in activities
+            if (index.get(activity["id"]) or {}).get("has_streams")
+            and not index[activity["id"]].get("vo2_checked")
+            and activity.get("device_watts")
+            and activity.get("average_heartrate")
+            and activity["id"] not in urgent_ids
+        ]) + optional
     streams_fetched = 0
     stored_scored = 0
     if urgent or optional or backfill:

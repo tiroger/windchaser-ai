@@ -701,6 +701,38 @@ class StreamsSyncTests(WorkerTestCase):
         self.assertAlmostEqual(index["1"]["exercise_load"], expected, delta=expected * 0.02)
         self.assertNotIn("exercise_load", index["2"])
 
+    def test_backfill_refetches_stored_power_rides_for_vo2max_first(self):
+        ride = _steady(60, 150, watts=220)
+        with_power = {**_stored("1", "2025-01-01T08:00:00Z"), "device_watts": True, "average_heartrate": 150}
+        hr_only = {**_stored("2", "2025-01-02T08:00:00Z"), "average_heartrate": 150}
+        store = FakeStore({
+            "activities.json": [with_power, hr_only, _stored("3", "2024-01-01T08:00:00Z")],
+            "streams-index.json": {
+                "1": {"has_streams": True},
+                "2": {"has_streams": True},
+            },
+            "streams/1.json": {"id": "1", "samples": stream_math.samples(ride)},
+            "streams/2.json": {"id": "2", "samples": stream_math.samples(ride)},
+        })
+        fetched = []
+
+        def strava_get(path, *_):
+            fetched.append(path)
+            return {key: {"data": value} for key, value in ride.items()}
+
+        self._run(store, {"source": "streams-backfill"}, strava_get)
+        # The stored power ride comes back ahead of missing history; the one
+        # without power has nothing VO2max could use and stays as it was.
+        self.assertEqual(fetched, ["/activities/1/streams", "/activities/3/streams"])
+        index = store.objects["streams-index.json"]
+        self.assertTrue(index["1"]["vo2_checked"])
+        self.assertIsNotNone(index["1"]["vo2_power"])
+        self.assertNotIn("vo2_checked", index["2"])
+
+        fetched.clear()
+        self._run(store, {"source": "streams-backfill"}, strava_get)
+        self.assertEqual(fetched, [], "analysed once at full resolution, never again")
+
     def test_backfill_stops_at_the_rate_limit_and_keeps_progress(self):
         store = FakeStore({"activities.json": [_stored(str(i), f"2025-01-0{i}T08:00:00Z") for i in range(1, 4)]})
         calls = []
