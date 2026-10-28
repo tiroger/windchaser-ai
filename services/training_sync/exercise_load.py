@@ -229,4 +229,7 @@ def analyse(streams: dict[str, list[Any]], rest_hr: float, max_hr: float) -> dic
         "exercise_load": epoc_load(time, heartrate, rest_hr, max_hr),
         "exercise_load_model": MODEL_VERSION,
         "vo2_power": vo2_power(time, watts, heartrate, rest_hr, max_hr),
+        # Marks an entry analysed at full resolution. Entries scored from the
+        # stored, downsampled samples lack it and can never carry VO2max.
+        "vo2_checked": True,
     }
