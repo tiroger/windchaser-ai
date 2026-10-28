@@ -1,14 +1,19 @@
 import "server-only";
 
-import type { ActivityRecord } from "@/lib/training/data";
-import { loadActivityRecords, loadEffortHistoryObject, loadStreamsIndex } from "@/lib/training/data";
+import {
+  loadActivityRecords,
+  loadEffortHistoryObject,
+  loadStreamsIndex,
+  type ActivityRecord,
+} from "@/lib/training/data";
 import {
   findLoops,
   loopName,
   loopRide,
   rankRides,
+  type LoopDetail,
   type LoopIndex,
-  type LoopRide,
+  type LoopSummary,
 } from "@/lib/training/loops";
 import {
   activitySegments,
@@ -25,31 +30,6 @@ import {
  * Both are derived from whole objects and cached against those objects'
  * ETags, so a request after the first costs S3 revalidations and a lookup.
  */
-
-export type LoopDetail = {
-  id: string;
-  name: string;
-  /** Strava sport type of the loop's rides. */
-  type: string;
-  /** Miles, the median of the rides. */
-  distance: number;
-  count: number;
-  /** Wall-clock start of the first ride. */
-  since: string;
-  /** Fastest first; see rankRides. */
-  rides: LoopRide[];
-};
-
-export type LoopSummary = {
-  id: string;
-  name: string;
-  type: string;
-  distance: number;
-  count: number;
-  since: string;
-  best: { id: string; date: string; movingSeconds: number; averageSpeed: number | null } | null;
-  latest: { id: string; date: string };
-};
 
 type LoopCache = {
   key: string;

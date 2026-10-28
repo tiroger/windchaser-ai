@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  binByDistance,
   findLoops,
   loopName,
   loopRide,
@@ -78,9 +79,9 @@ const NORTH: Shape = { start: HOME, radius: 4000, heading: 0 };
 
 describe("sameLoop", () => {
   it("matches the same loop ridden again with GPS noise", () => {
-    expect(sameLoop(ride("1", "2020-01-01", NORTH), ride("2", "2021-01-01", NORTH, { seed: 9 }))).toBe(
-      true,
-    );
+    expect(
+      sameLoop(ride("1", "2020-01-01", NORTH), ride("2", "2021-01-01", NORTH, { seed: 9 })),
+    ).toBe(true);
   });
 
   it("matches a ride whose recording started a few hundred meters along", () => {
@@ -115,12 +116,12 @@ describe("sameLoop", () => {
 
   it("rejects a reported distance more than 10% apart", () => {
     const base = ride("1", "2020-01-01", NORTH);
-    expect(sameLoop(base, { ...ride("2", "2021-01-01", NORTH), distance: base.distance * 1.15 })).toBe(
-      false,
-    );
-    expect(sameLoop(base, { ...ride("2", "2021-01-01", NORTH), distance: base.distance * 1.05 })).toBe(
-      true,
-    );
+    expect(
+      sameLoop(base, { ...ride("2", "2021-01-01", NORTH), distance: base.distance * 1.15 }),
+    ).toBe(false);
+    expect(
+      sameLoop(base, { ...ride("2", "2021-01-01", NORTH), distance: base.distance * 1.05 }),
+    ).toBe(true);
   });
 
   it("keeps sports, and virtual and outdoor rides, apart", () => {
@@ -232,7 +233,9 @@ describe("findLoops", () => {
 });
 
 describe("ranking", () => {
-  const source = (overrides: Partial<LoopRideSource> & Pick<LoopRideSource, "id">): LoopRideSource => ({
+  const source = (
+    overrides: Partial<LoopRideSource> & Pick<LoopRideSource, "id">,
+  ): LoopRideSource => ({
     name: "Ride",
     date: "2020-01-01T08:00:00",
     distance: 20,
@@ -261,23 +264,35 @@ describe("ranking", () => {
     ).toMatchObject({ normalizedPower: 185.4, hasStreams: true });
   });
 
-  it("ranks fastest first, ties share a rank and go to the earlier ride", () => {
+  it("ranks by average speed; equal speeds share a rank, quicker time first", () => {
     const ranked = rankRides(
       [
         source({ id: "a", date: "2020-03-01", average_speed: 16 }),
         source({ id: "b", date: "2020-01-01", average_speed: 18 }),
-        source({ id: "c", date: "2021-01-01", average_speed: 16 }),
+        source({ id: "c", date: "2021-01-01", average_speed: 16, distance: 19 }),
         source({ id: "d", date: "2019-01-01", average_speed: 0, moving_time: 0 }),
         source({ id: "e", date: "2018-01-01", average_speed: 15 }),
+        source({ id: "f", date: "2017-01-01", average_speed: 16 }),
       ].map((entry) => loopRide(entry)),
     );
     expect(ranked.map((entry) => [entry.id, entry.rank])).toEqual([
       ["b", 1],
-      ["a", 2],
       ["c", 2],
-      ["e", 4],
+      ["f", 2],
+      ["a", 2],
+      ["e", 5],
       ["d", null],
     ]);
+  });
+
+  it("does not reward a ride for recording less of the loop", () => {
+    // Started recording late: shorter and quicker, but slower on the road.
+    const ranked = rankRides([
+      loopRide(source({ id: "late", distance: 18.3, average_speed: 17.2 })),
+      loopRide(source({ id: "full", distance: 20, average_speed: 17.4 })),
+    ]);
+    expect(ranked.map((entry) => entry.id)).toEqual(["full", "late"]);
+    expect(ranked[1].movingSeconds).toBeLessThan(ranked[0].movingSeconds!);
   });
 });
 
@@ -288,5 +303,18 @@ describe("loopName", () => {
     );
     expect(loopName(["Bay loop", "Bay loop", "Hawk Hill"])).toBe("Bay loop");
     expect(loopName(["Evening Ride", "Evening Ride"])).toBe("Evening Ride");
+  });
+});
+
+describe("binByDistance", () => {
+  it("averages a channel into distance bins, skipping gaps", () => {
+    expect(
+      binByDistance([0, 0.05, 0.12, null, 0.31, 0.33], [100, 200, 150, 999, null, 90], 0.1),
+    ).toEqual([
+      [0.05, 150],
+      [0.15, 150],
+      [0.35, 90],
+    ]);
+    expect(binByDistance(undefined, [1], 0.1)).toEqual([]);
   });
 });

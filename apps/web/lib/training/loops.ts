@@ -378,6 +378,31 @@ export function findLoops(
 
 // ------------------------------------------------------------ metrics --
 
+export type LoopDetail = {
+  id: string;
+  name: string;
+  /** Strava sport type of the loop's rides. */
+  type: string;
+  /** Miles, the median of the rides. */
+  distance: number;
+  count: number;
+  /** Wall-clock start of the first ride. */
+  since: string;
+  /** Fastest first; see rankRides. */
+  rides: LoopRide[];
+};
+
+export type LoopSummary = {
+  id: string;
+  name: string;
+  type: string;
+  distance: number;
+  count: number;
+  since: string;
+  best: { id: string; date: string; movingSeconds: number; averageSpeed: number | null } | null;
+  latest: { id: string; date: string };
+};
+
 /** What one ride of a loop is compared on. */
 export type LoopRide = {
   id: string;
@@ -394,7 +419,7 @@ export type LoopRide = {
   averageHeartrate: number | null;
   /** Whether second-by-second streams are available to overlay. */
   hasStreams: boolean;
-  /** 1 for the fastest; rides without a time are unranked (null). */
+  /** 1 for the fastest by average speed; rides without one are unranked (null). */
   rank: number | null;
 };
 
@@ -430,7 +455,10 @@ export function movingSeconds(ride: LoopRideSource, streams?: LoopStreamsEntry):
   return ride.moving_time > 0 ? Math.round(ride.moving_time * 3600) : null;
 }
 
-export function loopRide(source: LoopRideSource, streams?: LoopStreamsEntry): Omit<LoopRide, "rank"> {
+export function loopRide(
+  source: LoopRideSource,
+  streams?: LoopStreamsEntry,
+): Omit<LoopRide, "rank"> {
   const seconds = movingSeconds(source, streams);
   return {
     id: source.id,
@@ -451,20 +479,33 @@ export function loopRide(source: LoopRideSource, streams?: LoopStreamsEntry): Om
   };
 }
 
-/** Fastest first; ties go to the earlier ride. Untimed rides come last, unranked. */
+/**
+ * Fastest first, by average speed rather than time: recorded distance varies
+ * by up to the 10% matching allows (a late start, a missed turn), and a ride
+ * that stopped its clock early is not the faster for it. Equal speeds share a
+ * rank, the quicker time listed first. Rides without a speed come last, unranked.
+ */
 export function rankRides(rides: Array<Omit<LoopRide, "rank">>): LoopRide[] {
-  const timed = rides
-    .filter((ride) => ride.movingSeconds !== null)
-    .sort((a, b) => a.movingSeconds! - b.movingSeconds! || byDateThenId(a, b));
-  const untimed = rides.filter((ride) => ride.movingSeconds === null).sort(byDateThenId);
+  const speed = (ride: Omit<LoopRide, "rank">) => ride.averageSpeed ?? 0;
+  const ranked = rides
+    .filter((ride) => speed(ride) > 0)
+    .sort(
+      (a, b) =>
+        speed(b) - speed(a) ||
+        (a.movingSeconds ?? Infinity) - (b.movingSeconds ?? Infinity) ||
+        byDateThenId(a, b),
+    );
+  const unranked = rides.filter((ride) => !(speed(ride) > 0)).sort(byDateThenId);
   let rank = 0;
   let previous: number | null = null;
-  const ranked = timed.map((ride, index) => {
-    if (ride.movingSeconds !== previous) rank = index + 1;
-    previous = ride.movingSeconds;
-    return { ...ride, rank };
-  });
-  return [...ranked, ...untimed.map((ride) => ({ ...ride, rank: null }))];
+  return [
+    ...ranked.map((ride, index) => {
+      if (speed(ride) !== previous) rank = index + 1;
+      previous = speed(ride);
+      return { ...ride, rank };
+    }),
+    ...unranked.map((ride) => ({ ...ride, rank: null })),
+  ];
 }
 
 const DEFAULT_NAME =
@@ -476,4 +517,41 @@ export function loopName(names: string[]): string {
   for (const name of names) counts.set(name.trim(), (counts.get(name.trim()) ?? 0) + 1);
   const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   return (ranked.find(([name]) => name && !DEFAULT_NAME.test(name)) ?? ranked[0])?.[0] ?? "Loop";
+}
+
+// --------------------------------------------------------- comparison --
+
+export type DistanceSeries = Array<[number, number]>;
+
+/**
+ * A stream channel averaged into equal distance bins, so two rides of a loop
+ * line up mile for mile and a noisy channel like power reads as a line.
+ * Readings with no distance or value are skipped; empty bins are left out.
+ */
+export function binByDistance(
+  distance: Array<number | null> | undefined,
+  values: Array<number | null> | undefined,
+  binMiles: number,
+): DistanceSeries {
+  if (!distance || !values || !(binMiles > 0)) return [];
+  const sums = new Map<number, { total: number; count: number }>();
+  for (let i = 0; i < Math.min(distance.length, values.length); i++) {
+    const miles = distance[i];
+    const value = values[i];
+    if (miles === null || miles === undefined || value === null || value === undefined) continue;
+    const bin = Math.floor(miles / binMiles);
+    const entry = sums.get(bin);
+    if (entry) {
+      entry.total += value;
+      entry.count++;
+    } else {
+      sums.set(bin, { total: value, count: 1 });
+    }
+  }
+  return [...sums.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([bin, { total, count }]) => [
+      Math.round((bin + 0.5) * binMiles * 100) / 100,
+      Math.round((total / count) * 10) / 10,
+    ]);
 }
