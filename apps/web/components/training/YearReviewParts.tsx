@@ -207,6 +207,7 @@ export function Chapter({
       id={`yr-${id}`}
       aria-labelledby={`yr-${id}-title`}
       data-chapter={id}
+      data-number={String(number).padStart(2, "0")}
     >
       <header className="yr-copy" data-reveal>
         <span className="yr-kicker">

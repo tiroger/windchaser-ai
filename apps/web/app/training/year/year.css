@@ -8,7 +8,7 @@
 
   Motion is layered: content is visible as rendered; once the page is live
   (.is-live, set after hydration) anything below the fold waits for the
-  scroll to reach it (.is-in). Scroll-linked pieces use CSS scroll timelines
+  scroll to reach it ([data-shown]). Scroll-linked pieces use CSS scroll timelines
   where the browser has them and an in-view transition where it does not.
   Under prefers-reduced-motion nothing waits and nothing moves.
 */
@@ -519,6 +519,55 @@
   align-items: center;
 }
 
+/* Each chapter's number, very large and faint, drifting against the scroll. */
+.training .yr-chapter {
+  position: relative;
+  isolation: isolate;
+}
+
+.training .yr-chapter::before {
+  content: attr(data-number);
+  position: absolute;
+  top: clamp(1rem, 6vh, 3.5rem);
+  right: 0;
+  z-index: -1;
+  font-family: var(--font-sans), sans-serif;
+  font-size: clamp(7rem, 18vw, 15rem);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.07em;
+  color: transparent;
+  -webkit-text-stroke: 1px var(--line);
+  pointer-events: none;
+}
+
+/* Set where the chapter leaves room: beside the copy, never behind a chart. */
+.training .yr-chapter.is-split::before {
+  top: auto;
+  bottom: clamp(1rem, 6vh, 3.5rem);
+  right: auto;
+  left: -0.04em;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .training .yr-chapter::before {
+      animation: yr-drift linear both;
+      animation-timeline: view();
+      animation-range: cover;
+    }
+  }
+}
+
+@keyframes yr-drift {
+  from {
+    transform: translateY(6rem);
+  }
+  to {
+    transform: translateY(-6rem);
+  }
+}
+
 .training .yr-chapter.is-split {
   grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
 }
@@ -578,7 +627,7 @@
     transition-delay: calc(var(--i, 0) * 90ms);
   }
 
-  .training .yr.is-live [data-reveal]:not(.is-in) {
+  .training .yr.is-live [data-reveal]:not([data-shown]) {
     opacity: 0;
     transform: translateY(40px);
   }
@@ -607,6 +656,10 @@
 .training .yr-globe-disc {
   stroke: var(--line);
   stroke-width: 1;
+}
+
+.training .yr-globe-dots circle {
+  fill: var(--ink-3);
 }
 
 .training .yr-globe-grid ellipse,
@@ -765,14 +818,14 @@
     transition-delay: calc(var(--i) * 110ms);
   }
 
-  .training .yr.is-live .yr-visual.is-in .yr-peak-fill {
+  .training .yr.is-live .yr-visual[data-shown] .yr-peak-fill {
     transform: scaleY(var(--f));
   }
 
   /* Where scroll timelines exist, the mountains fill with the scroll itself. */
   @supports (animation-timeline: view()) {
     .training .yr.is-live .yr-peak-fill,
-    .training .yr.is-live .yr-visual.is-in .yr-peak-fill {
+    .training .yr.is-live .yr-visual[data-shown] .yr-peak-fill {
       transition: none;
       transform: scaleY(var(--f));
       animation: yr-fill linear both;
@@ -1507,7 +1560,7 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .training .yr.is-live .yr-day-card:not(.is-in) .yr-day-route {
+  .training .yr.is-live .yr-day-card:not([data-shown]) .yr-day-route {
     stroke-dashoffset: 1;
   }
 
@@ -2049,7 +2102,7 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .training .yr.is-live .yr-vs:not(.is-in) .yr-vs-line {
+  .training .yr.is-live .yr-vs:not([data-shown]) .yr-vs-line {
     stroke-dashoffset: 1;
   }
 

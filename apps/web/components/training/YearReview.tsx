@@ -124,7 +124,9 @@ export default function YearReview({
       (entries) => {
         for (const entry of entries) {
           if (entry.isIntersecting) {
-            entry.target.classList.add("is-in");
+            // An attribute rather than a class: React owns className and
+            // would drop the class on the element's next render.
+            entry.target.setAttribute("data-shown", "");
             reveal.unobserve(entry.target);
           }
         }
@@ -275,7 +277,6 @@ export default function YearReview({
               ? `${DAY_NAMES[topDay.day]} carried ${Math.round((topDay.hours / weekHours) * 100)}% of the year's hours.`
               : undefined
           }
-          layout="split"
         >
           <div className="yr-when">
             <Clock clock={review.clock} />

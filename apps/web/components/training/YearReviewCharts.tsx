@@ -132,6 +132,40 @@ function equatorRuns(from: number, to: number) {
   return { front, back, head, headFront: facing ?? true };
 }
 
+/**
+ * A dot sphere: points on a 10° grid, seen from above the equator at the same
+ * tilt as the equator's ellipse, sized and faded by how directly they face
+ * the viewer. Only the near hemisphere is drawn.
+ */
+function globeDots(): Array<{ x: number; y: number; r: number; o: number }> {
+  const c = GLOBE.size / 2;
+  const sinA = GLOBE.tilt;
+  const cosA = Math.sqrt(1 - sinA * sinA);
+  const dots: Array<{ x: number; y: number; r: number; o: number }> = [];
+  for (let lat = -80; lat <= 80; lat += 10) {
+    const phi = (lat * Math.PI) / 180;
+    const count = Math.max(6, Math.round(36 * Math.cos(phi)));
+    for (let index = 0; index < count; index++) {
+      const lambda = (index / count) * TAU + (lat % 20 ? Math.PI / count : 0);
+      const x = Math.cos(phi) * Math.sin(lambda);
+      const y = Math.sin(phi);
+      const z = Math.cos(phi) * Math.cos(lambda);
+      const depth = y * sinA + z * cosA;
+      if (depth <= 0.05) continue;
+      const screenY = y * cosA - z * sinA;
+      dots.push({
+        x: c + GLOBE.radius * x,
+        y: c - GLOBE.radius * screenY,
+        r: 0.8 + depth * 1.6,
+        o: 0.2 + depth * 0.65,
+      });
+    }
+  }
+  return dots;
+}
+
+const GLOBE_DOTS = globeDots();
+
 const line = (points: Array<[number, number]>) =>
   points.map(([x, y], index) => `${index ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`).join("");
 
@@ -175,6 +209,11 @@ export function AroundTheWorld({ distance }: { distance: number }) {
           <path key={`tb${index}`} className="yr-equator-run is-back" d={line(run)} />
         ))}
         <circle className="yr-globe-disc" cx={c} cy={c} r={R} fill="url(#yr-globe-shade)" />
+        <g className="yr-globe-dots">
+          {GLOBE_DOTS.map((dot, index) => (
+            <circle key={index} cx={dot.x.toFixed(1)} cy={dot.y.toFixed(1)} r={dot.r.toFixed(2)} opacity={dot.o.toFixed(2)} />
+          ))}
+        </g>
         <g className="yr-globe-grid">
           {meridians.map((rx) => (
             <ellipse key={rx} cx={c} cy={c} rx={rx} ry={R} />
