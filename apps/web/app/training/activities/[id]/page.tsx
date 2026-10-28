@@ -7,6 +7,7 @@ import {
   loadPublicActivityDetail,
   loadTrainingData,
 } from "@/lib/training/data";
+import { loadActivityLoop, loadActivitySegments } from "@/lib/training/loops-data";
 
 type Params = Promise<{ id: string }>;
 
@@ -26,11 +27,20 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
 export default async function ActivityPage({ params }: { params: Params }) {
   const { id } = await params;
   if (!VALID_ID.test(id)) notFound();
-  const [data, detail, performance] = await Promise.all([
+  const [data, detail, performance, loop, segments] = await Promise.all([
     loadTrainingData(),
     loadPublicActivityDetail(id),
     loadPerformance().catch((error) => {
       console.error("[training] could not build performance summary", error);
+      return null;
+    }),
+    // Both are extras: the page still renders without them.
+    loadActivityLoop(id).catch((error) => {
+      console.error("[training] could not match loops", error);
+      return null;
+    }),
+    loadActivitySegments(id).catch((error) => {
+      console.error("[training] could not load segment efforts", error);
       return null;
     }),
   ]);
@@ -45,5 +55,15 @@ export default async function ActivityPage({ params }: { params: Params }) {
     weightKg: performance.weightKg,
     loads: performance.loads[id] ? { [id]: performance.loads[id] } : {},
   };
-  return <ActivityDetail activity={activity} gear={data.gear} performance={slim} detail={detail} />;
+  return (
+    <ActivityDetail
+      activity={activity}
+      gear={data.gear}
+      performance={slim}
+      detail={detail}
+      loop={loop}
+      // Segments are crossed on the road: nothing to list for an activity without a route.
+      segments={activity.hasRoute ? segments : null}
+    />
+  );
 }

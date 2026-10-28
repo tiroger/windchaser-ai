@@ -15,6 +15,7 @@ import {
   type Gear,
 } from "@/lib/training/activity-types";
 import { alpha } from "@/lib/training/color";
+import type { LoopDetail } from "@/lib/training/loops";
 import {
   ftpOn,
   HEART_RATE_ZONES,
@@ -24,9 +25,12 @@ import {
   type ActivityStream,
   type PerformanceSummary,
 } from "@/lib/training/metrics/performance";
+import type { SegmentEffortRow } from "@/lib/training/segments";
 
 import Chart, { axisText, splitLine, tooltip, useChartPalette } from "./Chart";
+import LoopCard from "./LoopCard";
 import RouteAnalysis, { TrackStats, type RouteTrack } from "./RouteAnalysis";
+import SegmentEfforts from "./SegmentEfforts";
 import SportIcon, { sportTone } from "./SportIcon";
 import { useTraining } from "./TrainingProvider";
 
@@ -64,11 +68,17 @@ export default function ActivityDetail({
   gear,
   performance,
   detail,
+  loop = null,
+  segments = null,
 }: {
   activity: Activity;
   gear: Gear[];
   performance: ActivityPerformance | null;
   detail: ActivityDetailData;
+  /** The loop this activity is a ride of, when it has been ridden more than once. */
+  loop?: LoopDetail | null;
+  /** Efforts on tracked segments; null when unavailable or the activity has no route. */
+  segments?: SegmentEffortRow[] | null;
 }) {
   const palette = useChartPalette();
   const text = axisText(palette);
@@ -397,6 +407,10 @@ export default function ActivityDetail({
           )}
         </article>
       </div>
+
+      {loop && <LoopCard loop={loop} activityId={activity.id} stream={stream} />}
+
+      {segments && <SegmentEfforts activityId={activity.id} segments={segments} />}
 
       {(effort || (profile && !track)) && (
         <div className="t-grid t-grid-even">
