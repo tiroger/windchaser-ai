@@ -793,7 +793,9 @@ tool-selection, safety, and mutation-confirmation thresholds.
 
 ### Phase 5: Prediction and portfolio polish
 
-- Historical import from `my-strava` through a one-time sanitized adapter.
+- ~~Historical import from `my-strava` through a one-time sanitized adapter.~~
+  Superseded by ADR-0004: my-strava is merged as the Training section and its
+  worker rebuilds history from Strava.
 - Baseline versus learned predictor evaluation.
 - Engineering, evaluation, cost, and architecture pages.
 - Accessibility, performance, SEO, and mobile polish.

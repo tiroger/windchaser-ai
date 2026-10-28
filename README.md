@@ -57,12 +57,14 @@ docs/                           Architecture and delivery documentation
 - [Terraform and CI/CD](docs/architecture/TERRAFORM_AND_CICD.md)
 - [Architecture decisions](docs/decisions/README.md)
 
-## Relationship to `my-strava`
+## Training (formerly `my-strava`)
 
-The existing [`my-strava`](https://github.com/tiroger/my-strava) project is a
-reference and data source, not a code dependency. Historical ride data and proven cycling
-calculations may be migrated through explicit, tested adapters. The old repository
-will not be modified by this project.
+The [`my-strava`](https://github.com/tiroger/my-strava) training dashboard now
+lives here as the **Training** section at `/training`: year-over-year progress
+and goals, activity analysis with gradient profiles and 3D route views, saved
+routes, heatmap, power and fitness, gear and maintenance, and year in review.
+Its worker, `services/training_sync`, shares this project's Strava webhook and
+credential. See [ADR-0004](docs/decisions/0004-merge-my-strava.md).
 
 ## Guiding principles
 
