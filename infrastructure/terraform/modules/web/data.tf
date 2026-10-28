@@ -98,3 +98,60 @@ resource "aws_iam_role_policy_attachment" "compute_read_app_data" {
   role       = aws_iam_role.compute.name
   policy_arn = aws_iam_policy.read_app_data.arn
 }
+
+# Versioning keeps every overwrite, and the Training worker overwrites often:
+# activities.json and streams-index.json on every ride, and streams/* objects
+# are written and deleted as activities change. Superseded versions are kept
+# long enough to recover from a bad write and no longer, so the bucket's size
+# tracks the data rather than its history.
+resource "aws_s3_bucket_lifecycle_configuration" "app_data" {
+  bucket = aws_s3_bucket.app_data.id
+
+  rule {
+    id     = "expire-noncurrent-versions"
+    status = "Enabled"
+
+    filter {}
+
+    noncurrent_version_expiration {
+      noncurrent_days           = 30
+      newer_noncurrent_versions = 10
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+
+  # The provider documents this ordering for rules on noncurrent versions: a
+  # lifecycle configuration applied before versioning is enabled can be
+  # rejected or silently do nothing.
+  depends_on = [aws_s3_bucket_versioning.app_data]
+}
+
+# The runtime's only write path into the bucket: the Training owner's edits to
+# the maintenance log and to goals and athlete settings. Two named keys, so a
+# compromised owner session can overwrite neither the synced Strava data nor
+# the calibration the wind view depends on.
+data "aws_iam_policy_document" "write_owner_edits" {
+  statement {
+    sid     = "WriteOwnerEdits"
+    effect  = "Allow"
+    actions = ["s3:PutObject"]
+    resources = [
+      "${aws_s3_bucket.app_data.arn}/${var.maintenance_s3_key}",
+      "${aws_s3_bucket.app_data.arn}/${var.settings_s3_key}",
+    ]
+  }
+}
+
+resource "aws_iam_policy" "write_owner_edits" {
+  name        = "windchaser-${var.environment}-write-owner-edits"
+  description = "Write the Training owner's maintenance log and settings."
+  policy      = data.aws_iam_policy_document.write_owner_edits.json
+}
+
+resource "aws_iam_role_policy_attachment" "compute_write_owner_edits" {
+  role       = aws_iam_role.compute.name
+  policy_arn = aws_iam_policy.write_owner_edits.arn
+}

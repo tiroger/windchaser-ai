@@ -24,6 +24,26 @@ export async function GET() {
     NODE_ENV: process.env.NODE_ENV ?? null,
   };
 
+  // The Training section's configuration (ADR-0004), as presence flags only.
+  // Key names are not secret, but the queue URL carries the account id and the
+  // athlete id identifies the rider, so this reports whether each resolved and
+  // leaves out what it resolved to.
+  const training = Object.fromEntries(
+    [
+      "ACTIVITIES_S3_KEY",
+      "BIKES_S3_KEY",
+      "STREAMS_S3_PREFIX",
+      "STREAMS_INDEX_S3_KEY",
+      "SAVED_ROUTES_S3_KEY",
+      "SAVED_ROUTES_S3_PREFIX",
+      "MAINTENANCE_S3_KEY",
+      "SETTINGS_S3_KEY",
+      "WEB_SECRET_ARN",
+      "TRAINING_EVENTS_QUEUE_URL",
+      "STRAVA_ATHLETE_ID",
+    ].map((name) => [name, Boolean(process.env[name])]),
+  );
+
   let credentials: { resolved: boolean; source: string; detail?: string };
   try {
     const config = await stravaConfig();
@@ -49,6 +69,7 @@ export async function GET() {
     {
       status: credentials.resolved ? "ok" : "degraded",
       env,
+      training,
       credentials,
       calibration: {
         segments: Object.keys(table).length,

@@ -68,3 +68,7 @@ apps/web/fixtures/calibration.json
 # Local MCP client configuration. Names the app data bucket, which carries the
 # account id, and this repository is public. .mcp.json.example is the shape.
 .mcp.json
+
+# Local Training snapshot in my-strava's layout, for TRAINING_LOCAL_DATA_DIR.
+# Real activities, routes and gear: never committed.
+data/training-snapshot/

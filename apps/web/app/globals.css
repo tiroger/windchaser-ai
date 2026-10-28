@@ -244,6 +244,47 @@ button {
   flex: 1;
 }
 
+/* The wordmark is the wind view's h1 and a plain name elsewhere; both read the
+   same. */
+.wordmark-name {
+  font-size: var(--step-1);
+  font-weight: 580;
+  letter-spacing: -0.032em;
+  line-height: 1.2;
+}
+
+/* Wind | Training. A segmented control rather than chips: it is where you
+   are, not a filter on what you see. */
+.app-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+}
+
+.app-switch a {
+  padding: 0.26rem 0.78rem;
+  border-radius: var(--radius-pill);
+  color: var(--ink-2);
+  font-size: var(--step--1);
+  font-weight: 480;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 130ms ease, color 130ms ease, box-shadow 130ms ease;
+}
+
+.app-switch a:hover {
+  color: var(--ink);
+}
+
+.app-switch a[aria-current] {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-sm), inset 0 0 0 1px var(--line-soft);
+}
+
 .chip-row {
   display: flex;
   gap: 0.28rem;

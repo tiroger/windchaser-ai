@@ -100,3 +100,25 @@ output "public_url" {
     length(aws_amplify_branch.tracked) > 0 ? "https://${aws_amplify_branch.tracked[0].branch_name}.${aws_amplify_app.web.default_domain}" : null
   )
 }
+
+output "web_secret_arn" {
+  description = "Owner-mode secret for the Training section. The ARN is not sensitive; the contents are."
+  value       = aws_secretsmanager_secret.web.arn
+}
+
+output "web_secret_name" {
+  description = "Name to pass to `aws secretsmanager put-secret-value` for the owner-mode secret."
+  value       = aws_secretsmanager_secret.web.name
+}
+
+output "training_s3_keys" {
+  description = "Object layout the Training section reads, for the worker that writes it."
+  value = {
+    activities          = var.activities_s3_key
+    bikes               = var.bikes_s3_key
+    streams_prefix      = var.streams_s3_prefix
+    streams_index       = var.streams_index_s3_key
+    saved_routes        = var.saved_routes_s3_key
+    saved_routes_prefix = var.saved_routes_s3_prefix
+  }
+}

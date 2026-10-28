@@ -154,6 +154,11 @@ def access_token() -> str:
     if _token and time.time() < _token[1] - 60:
         return _token[0]
 
+    # The training worker shares this refresh token and may have rotated it
+    # since this container last read the secret, and Strava stops accepting the
+    # old one once it issues a new one. Refreshes happen a few times a day, so
+    # reading the secret fresh for each costs nothing.
+    _credentials = None
     creds = credentials()
     payload = _http(
         TOKEN_URL,
@@ -169,7 +174,10 @@ def access_token() -> str:
 
     rotated = payload.get("refresh_token")
     if rotated and rotated != creds["STRAVA_REFRESH_TOKEN"]:
-        updated = {**creds, "STRAVA_REFRESH_TOKEN": rotated}
+        # Merge into the secret as it is now, so a key another reader added
+        # since this container read it is not written away.
+        _credentials = None
+        updated = {**credentials(), "STRAVA_REFRESH_TOKEN": rotated}
         _client().put_secret_value(
             SecretId=_secret_id(), SecretString=json.dumps(updated)
         )

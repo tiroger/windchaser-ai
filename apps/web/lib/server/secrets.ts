@@ -64,6 +64,15 @@ async function load(): Promise<Partial<StravaCredentials>> {
   }
 }
 
+/**
+ * Drops the cached secret so the next read fetches it again. Two workers share
+ * the refresh token and either may rotate it, after which the copy held here
+ * is refused; re-reading recovers without waiting for a cold start.
+ */
+export function forgetStravaCredentials(): void {
+  cached = null;
+}
+
 /** Resolves the secret once per container, coalescing concurrent callers. */
 export async function stravaCredentials(): Promise<Partial<StravaCredentials>> {
   if (cached) return cached;

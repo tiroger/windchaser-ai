@@ -1,0 +1,1624 @@
+/*
+  Training section.
+
+  Built from WindChaser's design system rather than beside it: the surfaces,
+  type scale, radii, shadows and the .panel / .chip / .label / .tag primitives
+  all come from globals.css, so light and dark both resolve through the token
+  set there. Nothing below declares a colour of its own; where a tint is
+  needed it is a color-mix() of a token, and the per-sport tones are tokens
+  too. Every selector sits under .training so none of this can leak into the
+  wind view.
+
+  Classes are prefixed t- because several natural names (.card, .profile-*,
+  .legend) are already WindChaser globals with different layouts.
+*/
+
+/* ---------------------------------------------------------------- frame -- */
+
+.training .t-subnav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem 1.4rem;
+  flex-wrap: wrap;
+  min-height: 2.9rem;
+  padding: 0 1.4rem;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--ground);
+}
+
+.training .t-tabs {
+  display: flex;
+  gap: 1.15rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin-bottom: -1px;
+}
+
+/* A column flexbox will still let a scrolling child size itself to its
+   content on a phone; these keep the tabs and chips to the screen width so
+   they scroll instead of widening the page. */
+.training .t-subnav > *,
+.training .t-main > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.training .t-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.training .t-tabs a {
+  padding: 0.78rem 0 0.68rem;
+  border-bottom: 2px solid transparent;
+  color: var(--ink-2);
+  font-size: var(--step--1);
+  font-weight: 460;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 130ms ease, border-color 130ms ease;
+}
+
+.training .t-tabs a:hover {
+  color: var(--ink);
+}
+
+.training .t-tabs a[aria-current] {
+  border-bottom-color: var(--accent);
+  color: var(--ink);
+  font-weight: 520;
+}
+
+.training .t-filter {
+  padding: 0.45rem 0;
+}
+
+.training a.chip {
+  text-decoration: none;
+}
+
+/* The filter chips are links, so "selected" is aria-current, not pressed. */
+.training a.chip[aria-current] {
+  background: var(--accent-wash);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.training .t-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 1.5rem 1.4rem 2.2rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.training .t-head {
+  margin-bottom: 0.35rem;
+}
+
+.training .t-head h1 {
+  font-size: var(--step-3);
+  letter-spacing: -0.035em;
+}
+
+.training .t-head p {
+  margin-top: 0.3rem;
+  max-width: 72ch;
+  color: var(--ink-2);
+}
+
+.training .t-footer {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.2rem;
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 1.1rem 1.4rem 2rem;
+  border-top: 1px solid var(--line-soft);
+  color: var(--ink-3);
+  font-size: var(--step--2);
+}
+
+.training .t-failure {
+  max-width: 560px;
+  margin: 2.5rem auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  text-align: center;
+}
+
+.training .t-failure h1 {
+  font-size: var(--step-2);
+}
+
+.training .t-failure p {
+  color: var(--ink-2);
+}
+
+.training .t-loading {
+  min-height: 45dvh;
+}
+
+/* ------------------------------------------------------------ owner mode -- */
+
+.training .t-owner-wrap {
+  position: relative;
+}
+
+.training .t-owner {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.34rem 0.75rem;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--step--1);
+  font-weight: 460;
+  white-space: nowrap;
+  transition: background 130ms ease, color 130ms ease;
+}
+
+.training .t-owner:hover {
+  background: var(--surface-3);
+  color: var(--ink);
+}
+
+.training .t-owner.is-active {
+  background: color-mix(in srgb, var(--open) 12%, transparent);
+  color: var(--open);
+}
+
+.training .t-owner .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--open);
+}
+
+.training .t-owner-popover {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  width: 300px;
+  padding: 0.95rem 1rem;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow), inset 0 0 0 1px var(--line-soft);
+}
+
+.training .t-owner-popover label {
+  color: var(--ink-2);
+  font-size: var(--step--1);
+  font-weight: 500;
+}
+
+.training .t-input-row {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.45rem;
+}
+
+.training .t-input-row .t-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* -------------------------------------------------------------- controls -- */
+
+.training .t-input,
+.training .t-select select {
+  height: 32px;
+  padding: 0 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--ground);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--step--1);
+}
+
+.training .t-input:disabled {
+  opacity: 0.6;
+}
+
+.training .t-select {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.22rem;
+}
+
+.training .t-select > span {
+  color: var(--ink-3);
+  font-size: var(--step--2);
+  font-weight: 500;
+}
+
+.training .t-select.is-block {
+  display: flex;
+  margin-top: 0.75rem;
+}
+
+.training .t-select.is-block select {
+  width: 100%;
+}
+
+/* Text on the accent is the ground colour: dark on the bright dark-theme
+   orange, light on the deeper light-theme one, legible in both. */
+.training .t-button {
+  height: 32px;
+  padding: 0 0.95rem;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--ground);
+  font-size: var(--step--1);
+  font-weight: 540;
+  white-space: nowrap;
+  transition: filter 130ms ease;
+}
+
+.training .t-button:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.training .t-button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.training .t-link {
+  padding: 0;
+  color: var(--accent);
+  font-size: var(--step--1);
+  font-weight: 480;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.training .t-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.training .t-back {
+  display: inline-block;
+  margin-bottom: 0.2rem;
+}
+
+.training .t-spaced {
+  margin-top: 0.8rem;
+}
+
+.training .t-search {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 32px;
+  padding: 0 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--ground);
+  color: var(--ink-3);
+}
+
+.training .t-search:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.training .t-search svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.training .t-search input {
+  width: 150px;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--step--1);
+}
+
+.training .t-search input::placeholder {
+  color: var(--ink-3);
+}
+
+.training .t-note {
+  margin-top: 0.55rem;
+  color: var(--ink-3);
+  font-size: var(--step--1);
+  line-height: 1.55;
+}
+
+.training .t-error,
+.training .t-notice {
+  margin-top: 0.5rem;
+  font-size: var(--step--1);
+}
+
+.training .t-error {
+  color: var(--alert);
+}
+
+.training .t-notice {
+  color: var(--open);
+}
+
+.training .t-empty {
+  padding: 1.6rem 0.5rem;
+  color: var(--ink-3);
+  font-size: var(--step--1);
+  text-align: center;
+}
+
+/* ---------------------------------------------------------------- grids -- */
+
+.training .t-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.training .t-grid {
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.training .t-grid-wide,
+.training .t-grid-map {
+  grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr);
+}
+
+.training .t-grid-narrow-first {
+  grid-template-columns: minmax(280px, 0.75fr) minmax(0, 1.55fr);
+}
+
+.training .t-grid-even {
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+}
+
+.training .t-grid > .t-stack {
+  align-self: start;
+}
+
+/* ---------------------------------------------------------------- cards -- */
+
+.training .panel > .label,
+.training .t-card-head .label {
+  display: block;
+}
+
+.training .t-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.6rem 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.training .t-card-title {
+  margin-top: 0.1rem;
+  font-size: var(--step-1);
+  font-weight: 540;
+  letter-spacing: -0.02em;
+}
+
+.training .t-detail-heading {
+  margin-top: 0.2rem;
+  font-size: var(--step-2);
+  letter-spacing: -0.03em;
+}
+
+.training .t-subsection {
+  margin-top: 1rem;
+}
+
+.training .t-subhead {
+  margin: 1rem 0 0.25rem;
+  color: var(--ink-3);
+  font-size: var(--step--2);
+  font-weight: 500;
+}
+
+.training .t-subsection > .t-subhead {
+  margin-top: 0;
+}
+
+.training .tag {
+  align-self: flex-start;
+}
+
+/* ---------------------------------------------------------------- tiles -- */
+
+.training .t-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.training .t-tile {
+  display: flex;
+  flex-direction: column;
+}
+
+.training .t-tile-value {
+  margin: 0.45rem 0 0.25rem;
+  font-size: var(--step-3);
+  font-weight: 460;
+  letter-spacing: -0.045em;
+  line-height: 1.05;
+}
+
+.training .t-tile-value .unit {
+  margin-left: 0.3rem;
+  color: var(--ink-3);
+  font-family: var(--font-sans), sans-serif;
+  font-size: var(--step--1);
+  letter-spacing: 0;
+}
+
+.training .t-tile-detail {
+  color: var(--ink-3);
+  font-size: var(--step--1);
+}
+
+.training .t-tile-detail.is-up {
+  color: var(--open);
+}
+
+.training .t-tile-detail.is-down {
+  color: var(--warn);
+}
+
+/* --------------------------------------------------------------- charts -- */
+
+.training .t-chart {
+  width: 100%;
+  margin-top: 0.25rem;
+}
+
+.training .t-chart-empty {
+  display: grid;
+  place-items: center;
+  height: 245px;
+  color: var(--ink-3);
+  font-size: var(--step--1);
+}
+
+.training .t-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  color: var(--ink-3);
+  font-size: var(--step--2);
+}
+
+.training .t-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.training .t-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+.training .t-swatch.is-current {
+  background: var(--accent);
+}
+
+.training .t-swatch.is-previous {
+  background: var(--ink-2);
+}
+
+.training .t-swatch.is-earlier {
+  background: color-mix(in srgb, var(--ink-3) 45%, var(--surface));
+}
+
+.training .t-swatch.is-month {
+  width: 9px;
+  height: 9px;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.training .t-figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.7rem;
+  margin: 0.55rem 0 0.35rem;
+}
+
+.training .t-figures strong {
+  display: block;
+  font-size: var(--step-2);
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  line-height: 1.15;
+}
+
+.training .t-figures small {
+  display: block;
+  color: var(--ink-3);
+  font-size: var(--step--2);
+}
+
+.training .is-wind {
+  color: var(--wind);
+}
+
+.training .is-alert {
+  color: var(--alert);
+}
+
+.training .is-open {
+  color: var(--open);
+}
+
+/* ---------------------------------------------------------------- goals -- */
+
+.training .t-goal {
+  margin-top: 0.95rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--line-soft);
+}
+
+.training .t-goal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.training .t-goal-head strong,
+.training .t-goal-head small {
+  display: block;
+}
+
+.training .t-goal-head strong {
+  font-weight: 540;
+}
+
+.training .t-goal-head small {
+  color: var(--ink-3);
+  font-size: var(--step--1);
+}
+
+.training .t-goal-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.6rem;
+}
+
+.training .t-goal-editor .t-input {
+  width: 120px;
+}
+
+.training .t-goal-track {
+  position: relative;
+  height: 8px;
+  margin-top: 0.85rem;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+}
+
+.training .t-goal-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: var(--radius-pill);
+}
+
+.training .t-goal-fill.is-ahead {
+  background: var(--open);
+}
+
+.training .t-goal-fill.is-behind {
+  background: var(--accent);
+}
+
+.training .t-goal-pace {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--ink);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.training .t-goal-figures {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.8rem;
+  margin-top: 0.55rem;
+  color: var(--ink-2);
+  font-size: var(--step--1);
+}
+
+.training .t-goal-figures strong {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.training .t-goal-figures .is-ahead {
+  color: var(--open);
+}
+
+.training .t-goal-figures .is-behind {
+  color: var(--accent);
+}
+
+/* ---------------------------------------------------------- active days -- */
+
+.training .t-active-days {
+  margin-top: 0.2rem;
+}
+
+.training .t-active-days-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 250px;
+  align-items: center;
+  gap: 0.9rem;
+  margin-top: 0.3rem;
+}
+
+.training .t-active-days.is-compact .t-active-days-body {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.training .t-sport-mix {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.training .t-active-days.is-compact .t-sport-mix {
+  grid-template-columns: 112px minmax(0, 280px);
+}
+
+.training .t-sport-mix ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.training .t-sport-mix li {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.14rem 0;
+  color: var(--ink-2);
+  font-size: var(--step--1);
+}
+
+.training .t-sport-mix li i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.training .t-sport-mix li b {
+  margin-left: auto;
+  color: var(--ink);
+  font-weight: 500;
+}
+
+/* ----------------------------------------------------------------- rows -- */
+
+.training .t-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 0.4rem;
+}
+
+.training .t-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  padding: 0.6rem 0.45rem;
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 -1px var(--line-soft);
+  color: inherit;
+  text-align: left;
+  text-decoration: none;
+  transition: background 120ms ease;
+}
+
+.training .t-row:last-child {
+  box-shadow: none;
+}
+
+.training a.t-row:hover,
+.training button.t-row:hover {
+  background: var(--surface-2);
+}
+
+.training .t-row[aria-pressed="true"] {
+  background: var(--accent-wash);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.training .t-row-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.training .t-row-text strong,
+.training .t-row-text small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.training .t-row-text strong {
+  color: var(--ink);
+  font-size: var(--step--1);
+  font-weight: 500;
+}
+
+.training a.t-row:hover .t-row-text strong {
+  color: var(--accent);
+}
+
+.training .t-row-text small {
+  margin-top: 0.08rem;
+  color: var(--ink-3);
+  font-size: var(--step--2);
+}
+
+.training .t-row-figure {
+  color: var(--ink-2);
+  font-size: var(--step--1);
+  white-space: nowrap;
+}
+
+.training .t-row-figure small {
+  color: var(--ink-3);
+}
+
+.training .t-scroll-list {
+  max-height: 540px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+/* Sport tones, from the token set; SportIcon.tsx mirrors these for charts. */
+.training .t-tone-ride {
+  --tone: var(--data-effort);
+}
+
+.training .t-tone-run {
+  --tone: var(--data-wind);
+}
+
+.training .t-tone-pickleball {
+  --tone: var(--data-open);
+}
+
+.training .t-tone-walk {
+  --tone: var(--warn);
+}
+
+.training .t-tone-swim {
+  --tone: color-mix(in srgb, var(--data-wind) 50%, var(--data-open));
+}
+
+.training .t-tone-training {
+  --tone: var(--alert);
+}
+
+.training .t-tone-other {
+  --tone: var(--ink-3);
+}
+
+.training .t-icon-chip {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--tone, var(--ink-3)) 14%, transparent);
+  color: var(--tone, var(--ink-3));
+}
+
+.training .t-icon-chip.is-small {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+}
+
+.training .t-icon-chip.is-large {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius);
+}
+
+.training .t-sport-icon {
+  width: 1.1em;
+  height: 1.1em;
+}
+
+.training .t-icon-chip.is-large .t-sport-icon {
+  width: 22px;
+  height: 22px;
+}
+
+/* ---------------------------------------------------------------- table -- */
+
+.training .t-table-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.training .t-table-scroll {
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.training .t-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.training .t-table th {
+  padding: 0.55rem 0.6rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-3);
+  font-size: var(--step--2);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.training .t-table td {
+  padding: 0.58rem 0.6rem;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--ink-2);
+  font-size: var(--step--1);
+  white-space: nowrap;
+}
+
+.training .t-table th:first-child,
+.training .t-table td:first-child {
+  padding-left: 0;
+}
+
+.training .t-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.training .t-table .is-num {
+  text-align: right;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.training .t-activity-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 220px;
+  color: var(--ink);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.training .t-activity-link:hover span:last-child {
+  color: var(--accent);
+}
+
+.training .t-more {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: 0.3rem;
+  padding: 0.8rem 0;
+  border-top: 1px solid var(--line-soft);
+  color: var(--ink-3);
+  font-size: var(--step--1);
+}
+
+.training .t-more span {
+  color: var(--accent);
+}
+
+/* --------------------------------------------------------------- detail -- */
+
+.training .t-detail-title {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-top: 0.6rem;
+}
+
+.training .t-detail-title h1 {
+  font-size: var(--step-3);
+  letter-spacing: -0.035em;
+}
+
+.training .t-detail-title p {
+  margin-top: 0.2rem;
+  color: var(--ink-2);
+  font-size: var(--step--1);
+}
+
+.training .t-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 0.85rem 1.2rem;
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--line-soft);
+}
+
+.training .t-stats.is-two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.training .t-stats small,
+.training .t-stats strong,
+.training .t-stats em {
+  display: block;
+}
+
+.training .t-stats small {
+  color: var(--ink-3);
+  font-size: var(--step--2);
+}
+
+.training .t-stats strong {
+  margin-top: 0.12rem;
+  font-size: var(--step-1);
+  font-weight: 500;
+}
+
+.training .t-stats em {
+  margin-top: 0.1rem;
+  color: var(--ink-3);
+  font-size: var(--step--2);
+  font-style: normal;
+}
+
+.training .t-analysis {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 0.6rem;
+  margin: 0.7rem 0 0;
+}
+
+.training .t-analysis div {
+  padding: 0.7rem 0.8rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.training .t-analysis dt {
+  color: var(--ink-2);
+  font-size: var(--step--2);
+}
+
+.training .t-analysis dd {
+  margin: 0.18rem 0 0;
+  font-size: var(--step-2);
+  font-weight: 500;
+  letter-spacing: -0.035em;
+}
+
+.training .t-analysis small {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--ink-3);
+  font-size: var(--step--2);
+  line-height: 1.45;
+}
+
+.training .t-peaks {
+  max-width: 560px;
+  margin-top: 1rem;
+}
+
+.training .t-zones {
+  margin: 0.7rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.training .t-zones.is-power {
+  --zone: var(--data-effort);
+}
+
+.training .t-zones.is-heart {
+  --zone: var(--alert);
+}
+
+.training .t-zones li {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr) 64px;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.28rem 0;
+  color: var(--ink-2);
+  font-size: var(--step--1);
+}
+
+.training .t-zones li.is-top {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.training .t-zones .bar-track i {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--zone);
+}
+
+.training .t-zones b {
+  color: var(--ink);
+  font-weight: 500;
+  text-align: right;
+}
+
+/* ------------------------------------------------------ elevation profile -- */
+
+.training .t-elevation {
+  width: 100%;
+  margin-top: 0.3rem;
+  overflow: hidden;
+  user-select: none;
+}
+
+.training .t-elevation svg {
+  display: block;
+}
+
+.training .t-profile-axis {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.training .t-profile-grid {
+  stroke: var(--line-soft);
+  stroke-width: 1;
+}
+
+.training .t-profile-label {
+  fill: var(--ink-3);
+  font-family: var(--font-mono), monospace;
+  font-size: 10px;
+}
+
+.training .t-profile-label.strong {
+  fill: var(--ink-2);
+  font-weight: 500;
+}
+
+/* Mid ink rather than the ground: the edge has to hold against both the pale
+   bands on a light surface and the dark surface itself. */
+.training .t-profile-line {
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+
+.training .t-profile-selection {
+  fill: color-mix(in srgb, var(--ink) 10%, transparent);
+  stroke: color-mix(in srgb, var(--ink) 40%, transparent);
+  stroke-width: 1;
+}
+
+.training .t-profile-callout {
+  fill: var(--ink);
+  font-family: var(--font-sans), sans-serif;
+  font-size: 11px;
+  font-weight: 560;
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 4px;
+}
+
+.training .t-profile-cursor {
+  stroke: var(--ink-2);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.training .t-profile-dot {
+  fill: var(--surface);
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+
+.training .t-grade-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.9rem;
+  margin-top: 0.55rem;
+  color: var(--ink-3);
+  font-family: var(--font-mono), monospace;
+  font-size: var(--step--2);
+}
+
+.training .t-grade-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.training .t-grade-legend i {
+  width: 14px;
+  height: 8px;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 12%, transparent);
+}
+
+.training .t-climbs {
+  margin-top: 0.5rem;
+}
+
+.training .t-climbs tbody tr {
+  cursor: pointer;
+}
+
+.training .t-climbs tbody tr:hover td,
+.training .t-climbs tr.is-selected td {
+  background: var(--accent-wash);
+  color: var(--ink);
+}
+
+.training .t-climb-cat {
+  display: inline-block;
+  min-width: 52px;
+  padding: 0.12rem 0.45rem;
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-family: var(--font-mono), monospace;
+  font-size: var(--step--2);
+  font-weight: 600;
+  text-align: center;
+}
+
+.training .t-climb-cat.cat-4 {
+  background: color-mix(in srgb, var(--warn) 15%, transparent);
+  color: var(--warn);
+}
+
+.training .t-climb-cat.cat-3 {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+}
+
+.training .t-climb-cat.cat-2 {
+  background: color-mix(in srgb, var(--alert) 15%, transparent);
+  color: var(--alert);
+}
+
+.training .t-climb-cat.cat-1,
+.training .t-climb-cat.cat-HC {
+  background: var(--alert);
+  color: var(--surface);
+}
+
+/* ----------------------------------------------------------------- maps -- */
+
+.training .t-map {
+  position: relative;
+  width: 100%;
+  margin-top: 0.55rem;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line-soft);
+}
+
+.training .t-map.is-loading {
+  display: grid;
+  place-items: center;
+  min-height: 260px;
+  padding: 1rem;
+  color: var(--ink-3);
+  font-size: var(--step--1);
+  text-align: center;
+}
+
+.training .t-mile-marker {
+  display: grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  color: var(--ink);
+  font-family: var(--font-mono), monospace;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.training .t-route-cursor {
+  width: 14px;
+  height: 14px;
+  border: 3px solid var(--ink);
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--surface) 60%, transparent);
+}
+
+/* --------------------------------------------------------- saved routes -- */
+
+.training .t-saved {
+  display: grid;
+  grid-template-columns: 290px minmax(0, 1fr);
+  gap: 0.85rem;
+  align-items: start;
+}
+
+.training .t-saved-list {
+  position: sticky;
+  top: 4.6rem;
+}
+
+.training .t-saved-list .t-search {
+  margin-top: 0.6rem;
+}
+
+.training .t-saved-list .t-search input {
+  width: 100%;
+}
+
+.training .t-saved-list .t-scroll-list {
+  max-height: calc(100dvh - 13rem);
+}
+
+.training .t-star {
+  color: var(--warn);
+}
+
+/* ---------------------------------------------------------- performance -- */
+
+.training .t-hero {
+  margin: 0.55rem 0 0.2rem;
+}
+
+.training .t-hero-aside {
+  margin-left: 0.4rem;
+  color: var(--accent);
+  font-size: var(--step--1);
+  font-weight: 500;
+}
+
+.training .t-key-durations {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--line-soft);
+}
+
+.training .t-key-durations small,
+.training .t-key-durations strong,
+.training .t-key-durations em {
+  display: block;
+}
+
+.training .t-key-durations small {
+  color: var(--ink-3);
+  font-size: var(--step--2);
+}
+
+.training .t-key-durations strong {
+  margin-top: 0.12rem;
+  font-weight: 500;
+}
+
+.training .t-key-durations em {
+  color: var(--ink-3);
+  font-size: var(--step--2);
+  font-style: normal;
+}
+
+.training .t-settings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+  margin-top: 0.7rem;
+}
+
+.training .t-settings label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  color: var(--ink-2);
+  font-size: var(--step--1);
+}
+
+.training .t-settings .t-input {
+  width: 100%;
+}
+
+.training .t-settings small {
+  color: var(--ink-3);
+  font-size: var(--step--2);
+}
+
+.training .t-settings .t-button {
+  align-self: end;
+  justify-self: start;
+}
+
+.training .t-method ul {
+  margin: 0.6rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--ink-2);
+  font-size: var(--step--1);
+  line-height: 1.6;
+}
+
+.training .t-method li + li {
+  margin-top: 0.4rem;
+}
+
+.training .t-method b {
+  color: var(--ink);
+  font-weight: 540;
+}
+
+/* --------------------------------------------------------------- garage -- */
+
+.training .t-bikes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 0.7rem;
+  margin-top: 0.7rem;
+}
+
+.training .t-bike {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.training .t-bike.is-retired {
+  opacity: 0.7;
+}
+
+.training .t-bike-photo {
+  display: block;
+  width: 100%;
+  height: 130px;
+  object-fit: cover;
+  background: var(--surface-3);
+}
+
+.training .t-bike-photo.is-placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+}
+
+.training .t-bike-photo.is-placeholder svg {
+  width: 38px;
+  height: 38px;
+}
+
+.training .t-bike-body {
+  padding: 0.7rem 0.8rem 0.8rem;
+}
+
+.training .t-bike-body > strong,
+.training .t-bike-body > small,
+.training .t-bike-body > em {
+  display: block;
+}
+
+.training .t-bike-body > strong {
+  font-weight: 540;
+}
+
+.training .t-bike-body > small {
+  color: var(--ink-3);
+  font-size: var(--step--2);
+}
+
+.training .t-bike-body > em {
+  margin-top: 0.5rem;
+  color: var(--ink-3);
+  font-size: var(--step--2);
+  font-style: normal;
+}
+
+.training .t-bike-figures {
+  display: flex;
+  gap: 1.1rem;
+  margin-top: 0.55rem;
+}
+
+.training .t-bike-figures b,
+.training .t-bike-figures small {
+  display: block;
+}
+
+.training .t-bike-figures b {
+  font-weight: 500;
+}
+
+.training .t-bike-figures small {
+  color: var(--ink-3);
+  font-size: var(--step--2);
+}
+
+.training .t-schedule b {
+  color: var(--open);
+  font-size: var(--step--1);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.training .t-schedule.is-soon b {
+  color: var(--warn);
+}
+
+.training .t-schedule.is-overdue b {
+  color: var(--alert);
+}
+
+.training .t-service-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem;
+  margin-top: 0.9rem;
+}
+
+.training .t-service-form .t-select {
+  flex: 1;
+  min-width: 130px;
+  margin-top: 0;
+}
+
+.training .t-check {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--open) 14%, transparent);
+  color: var(--open);
+  font-size: var(--step--1);
+}
+
+.training .t-delete {
+  width: 28px;
+  height: 28px;
+  color: var(--ink-3);
+  font-size: var(--step-1);
+}
+
+.training .t-delete:hover {
+  color: var(--alert);
+}
+
+/* ----------------------------------------------------------- responsive -- */
+
+@media (max-width: 1100px) {
+  .training .t-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .training .t-active-days-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .training .t-key-durations {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 980px) {
+  .training .t-grid-wide,
+  .training .t-grid-map,
+  .training .t-grid-narrow-first,
+  .training .t-saved {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .training .t-saved-list {
+    position: static;
+  }
+
+  .training .t-saved-list .t-scroll-list {
+    max-height: 280px;
+  }
+}
+
+@media (max-width: 640px) {
+  .training .t-subnav,
+  .training .t-main,
+  .training .t-footer {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .training .t-subnav {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .training .t-filter {
+    padding-top: 0;
+  }
+
+  .training .t-grid-even {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .training .t-tile-value {
+    font-size: var(--step-2);
+  }
+
+  .training .t-settings {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .training .t-zones li {
+    grid-template-columns: 110px minmax(0, 1fr) 56px;
+  }
+
+  .training .t-search,
+  .training .t-search input {
+    width: 100%;
+  }
+
+  .training .t-table-actions {
+    width: 100%;
+  }
+
+  .training .t-table-actions .t-search {
+    flex: 1;
+  }
+
+  .training .t-owner-popover {
+    position: fixed;
+    top: 6.5rem;
+    left: 12px;
+    right: 12px;
+    width: auto;
+  }
+}
