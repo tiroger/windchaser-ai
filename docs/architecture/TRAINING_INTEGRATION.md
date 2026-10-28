@@ -13,7 +13,7 @@ Strava ─► POST /api/strava/webhook ─┬─► windchaser-{env}-strava-even
                                     └─► windchaser-{env}-training-events.fifo ─► training_sync
                                           activities, streams, gear, saved routes
 EventBridge ─► training-events.fifo: daily "scheduled-reconciliation" (also
-               refreshes gear and saved routes), 2-hourly "streams-backfill"
+               refreshes gear and saved routes), hourly "streams-backfill"
 ```
 
 - Every message on the training queue uses message group `strava-events`, so

@@ -7,7 +7,7 @@ Three kinds of message arrive on one FIFO queue, all in message group
   body (WindChaser's ``{"received_at", "event"}`` envelope is accepted too);
 - ``{"source": "scheduled-reconciliation"}`` daily, the safety net for events
   Strava never delivered, which also refreshes gear and saved routes;
-- ``{"source": "streams-backfill"}`` every two hours, filling in detailed
+- ``{"source": "streams-backfill"}`` every hour, filling in detailed
   streams a batch at a time; ``{"source": "routes-sync"}`` on demand.
 
 Serialisation is what makes the read-modify-write of activities.json safe, and
