@@ -25,7 +25,13 @@ const ELSEWHERE = encodePolyline([
 function history(efforts: EffortHistory["efforts"]): EffortHistory {
   return {
     segments: {
-      "1": { id: 1, name: "Hawk Hill", distance_m: 2658, average_grade: 6.8, points: [SEGMENT_START] },
+      "1": {
+        id: 1,
+        name: "Hawk Hill",
+        distance_m: 2658,
+        average_grade: 6.8,
+        points: [SEGMENT_START],
+      },
       "2": { id: 2, name: "Unplaced", points: null },
     },
     efforts,
@@ -44,7 +50,12 @@ describe("parseEffortHistory", () => {
     const parsed = parseEffortHistory({
       segments: { "1": { id: 1, name: " Hawk Hill ", distance_m: 2658.5, points: [[1, 2]] } },
       efforts: [
-        { segment_id: 1, start_date: "2023-09-17T17:31:26Z", elapsed_time_s: 295, weather: { wind_speed_ms: 3 } },
+        {
+          segment_id: 1,
+          start_date: "2023-09-17T17:31:26Z",
+          elapsed_time_s: 295,
+          weather: { wind_speed_ms: 3 },
+        },
         { segment_id: 1, start_date: "not a date", elapsed_time_s: 295 },
         { segment_id: 1, start_date: "2023-09-17T17:31:26Z", elapsed_time_s: 0 },
         { start_date: "2023-09-17T17:31:26Z", elapsed_time_s: 300 },
@@ -152,7 +163,9 @@ describe("activitySegments", () => {
 
   it("returns the segment's history oldest first, dated locally where known", () => {
     const [row] = activitySegments("7", history(efforts), links, dates);
-    expect(row.history.map((point) => [point.date, point.elapsedSeconds, point.activityId])).toEqual([
+    expect(
+      row.history.map((point) => [point.date, point.elapsedSeconds, point.activityId]),
+    ).toEqual([
       ["2020-05-01", 640, null],
       ["2021-04-24", 600, "5"],
       ["2022-06-01", 610, "7"],

@@ -80,7 +80,8 @@ export function parseEffortHistory(raw: unknown): EffortHistory {
       if (!segment || id === null) continue;
       segments[String(id)] = {
         id,
-        name: typeof segment.name === "string" && segment.name.trim() ? segment.name.trim() : "Segment",
+        name:
+          typeof segment.name === "string" && segment.name.trim() ? segment.name.trim() : "Segment",
         distance_m: finite(segment.distance_m),
         average_grade: finite(segment.average_grade),
         points: Array.isArray(segment.points) ? segment.points : null,
@@ -131,7 +132,8 @@ function nearTrack(point: [number, number], track: Array<[number, number]>): boo
     const dx = bx - ax;
     const dy = by - ay;
     const lengthSquared = dx * dx + dy * dy;
-    const t = lengthSquared > 0 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / lengthSquared)) : 0;
+    const t =
+      lengthSquared > 0 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / lengthSquared)) : 0;
     if (Math.hypot(ax + t * dx, ay + t * dy) <= NEAR_SEGMENT_METERS) return true;
   }
   return false;
@@ -161,9 +163,10 @@ export function linkEfforts(
 
   const links = new Map<number, string>();
   history.efforts.forEach((effort, index) => {
-    const direct = effort.activity_id === null || effort.activity_id === undefined
-      ? null
-      : String(effort.activity_id);
+    const direct =
+      effort.activity_id === null || effort.activity_id === undefined
+        ? null
+        : String(effort.activity_id);
     if (direct && known.has(direct)) {
       links.set(index, direct);
       return;
