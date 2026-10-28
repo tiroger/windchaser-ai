@@ -1,0 +1,476 @@
+/*
+  Ride planner on a saved route (components/training/RoutePlanner.tsx).
+
+  Same rules as training.css: everything under .training, every colour a
+  WindChaser token or a color-mix() of one. Faster than calm air leans to
+  --data-open and slower to --data-effort, the pair the wind view uses for
+  tailwind and headwind, around a neutral surface midpoint.
+*/
+
+.training .t-planner {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.training .t-planner .t-card-head {
+  margin-bottom: 0;
+}
+
+.training .t-plan-subtitle {
+  margin-top: 0.1rem;
+  font-size: var(--step-0);
+  font-weight: 540;
+  letter-spacing: -0.016em;
+}
+
+.training .t-planner .is-faster {
+  color: var(--open);
+}
+
+.training .t-planner .is-slower {
+  color: var(--warn);
+}
+
+/* ----------------------------------------------------------------- power -- */
+
+.training .t-plan-power {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.35rem 0.9rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.training .t-plan-power-label {
+  color: var(--ink-2);
+  font-size: var(--step--1);
+  font-weight: 500;
+}
+
+.training .t-plan-power-number {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--ink-3);
+  font-size: var(--step--1);
+}
+
+.training .t-plan-power-number .t-input {
+  width: 4.6rem;
+  text-align: right;
+}
+
+.training .t-plan-power-note {
+  grid-column: 1 / -1;
+  color: var(--ink-3);
+  font-size: var(--step--2);
+}
+
+/* ---------------------------------------------------------- best window -- */
+
+.training .t-plan-best {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.training .t-plan-headline {
+  max-width: 68ch;
+  font-size: var(--step-1);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+
+.training .t-plan-kicker {
+  display: block;
+  margin-bottom: 0.15rem;
+  color: var(--accent);
+  font-size: var(--step--2);
+  font-weight: 560;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.training .t-plan-windows {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.training .t-plan-window {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: baseline;
+  gap: 0 0.6rem;
+  padding: 0.45rem 0.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--step--1);
+  text-align: left;
+  transition: background 130ms ease;
+}
+
+.training .t-plan-window strong {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.training .t-plan-window small {
+  grid-column: 1 / -1;
+  font-size: var(--step--2);
+}
+
+.training .t-plan-window:hover {
+  background: var(--surface-3);
+}
+
+.training .t-plan-window[aria-pressed="true"] {
+  background: var(--accent-wash);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+/* --------------------------------------------------------------- matrix -- */
+
+.training .t-plan-matrix-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.training .t-plan-readout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 0.75rem;
+  min-height: 1.5rem;
+  color: var(--ink-2);
+  font-size: var(--step--1);
+}
+
+.training .t-plan-readout strong {
+  color: var(--ink);
+  font-weight: 540;
+}
+
+.training .t-plan-matrix {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.training .t-plan-hours,
+.training .t-plan-row {
+  display: grid;
+  grid-template-columns: 3.6rem repeat(24, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.training .t-plan-hours {
+  color: var(--ink-3);
+  font-family: var(--font-mono), monospace;
+  font-size: var(--step--2);
+}
+
+.training .t-plan-hours span {
+  padding-left: 0.2rem;
+  border-left: 1px solid var(--line);
+}
+
+.training .t-plan-hours span:first-child {
+  border-left: 0;
+}
+
+.training .t-plan-day {
+  align-self: center;
+  color: var(--ink-2);
+  font-size: var(--step--2);
+  white-space: nowrap;
+}
+
+.training .t-plan-gridcell {
+  display: block;
+  min-width: 0;
+}
+
+.training .t-plan-cell {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 24px;
+  padding: 0;
+  border-radius: 3px;
+  background: var(--surface-2);
+  transition: background 200ms ease;
+}
+
+/* Night is dimmed toward the page and hatched, so the scale still reads but
+   daylight stands forward, and the difference does not rest on colour. */
+.training .t-plan-cell[data-daylight="1"],
+.training .t-plan-cell[data-daylight="0"],
+.training .t-plan-swatch.is-night {
+  background-image: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--ground) 55%, transparent) 0 2px,
+    transparent 2px 4px
+  );
+}
+
+.training .t-plan-cell[data-daylight="0"],
+.training .t-plan-swatch.is-night {
+  background-image:
+    repeating-linear-gradient(135deg, color-mix(in srgb, var(--ink) 14%, transparent) 0 1px, transparent 1px 4px),
+    linear-gradient(color-mix(in srgb, var(--ground) 62%, transparent), color-mix(in srgb, var(--ground) 62%, transparent));
+}
+
+.training .t-plan-cell:disabled,
+.training .t-plan-cell.is-empty {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line-soft);
+  cursor: default;
+}
+
+.training .t-plan-cell:not(:disabled):hover {
+  outline: 1px solid var(--ink-3);
+  outline-offset: 0;
+  z-index: 1;
+}
+
+.training .t-plan-cell[data-best]::after {
+  content: "";
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: 0 0 0 1.5px var(--surface);
+  transform: translate(-50%, -50%);
+}
+
+.training .t-plan-cell[aria-pressed="true"] {
+  outline: 2px solid var(--ink);
+  outline-offset: 0;
+  z-index: 2;
+}
+
+.training .t-plan-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 1.2rem;
+  color: var(--ink-3);
+  font-size: var(--step--2);
+}
+
+.training .t-plan-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.training .t-plan-ramp i {
+  width: 16px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.training .t-plan-ramp small {
+  font-size: inherit;
+}
+
+.training .t-plan-swatch {
+  position: relative;
+  width: 16px;
+  height: 10px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--data-open) 72%, var(--surface-2));
+}
+
+.training .t-plan-swatch.is-best {
+  background: var(--surface-3);
+}
+
+.training .t-plan-swatch.is-best::after {
+  content: "";
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink);
+  transform: translate(-50%, -50%);
+}
+
+/* ----------------------------------------------------------- map + hour -- */
+
+.training .t-plan-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(280px, 1fr);
+  gap: 1rem 1.4rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line-soft);
+}
+
+.training .t-plan-map,
+.training .t-plan-detail {
+  min-width: 0;
+}
+
+.training .t-plan-map-frame {
+  position: relative;
+}
+
+.training .t-plan-compass {
+  position: absolute;
+  left: 0.6rem;
+  top: 0.6rem;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.6rem 0.35rem 0.4rem;
+  border-radius: var(--radius-sm);
+  background: var(--map-tint);
+  box-shadow: var(--shadow-sm);
+  color: var(--ink-2);
+  font-size: var(--step--2);
+  line-height: 1.25;
+  pointer-events: none;
+}
+
+.training .t-plan-compass svg {
+  width: 34px;
+  height: 34px;
+}
+
+.training .t-plan-compass circle {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 1.5;
+}
+
+.training .t-plan-compass path {
+  fill: var(--wind);
+}
+
+.training .t-plan-compass line {
+  stroke: var(--wind);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+}
+
+.training .t-plan-detail .hero-number {
+  margin: 0.25rem 0 0.4rem;
+}
+
+.training .t-plan-phrase {
+  margin-bottom: 0.6rem;
+  color: var(--ink-2);
+  font-size: var(--step--1);
+}
+
+.training .t-plan-detail .v.is-faster {
+  color: var(--open);
+}
+
+.training .t-plan-detail .v.is-slower {
+  color: var(--warn);
+}
+
+.training .t-plan-warning {
+  margin-top: 0.6rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  color: var(--ink);
+  font-size: var(--step--1);
+}
+
+.training .t-plan-strip {
+  margin-top: 0.9rem;
+}
+
+.training .t-plan-strip svg {
+  display: block;
+  width: 100%;
+  height: 72px;
+  margin-top: 0.35rem;
+}
+
+.training .t-plan-strip-axis {
+  display: flex;
+  justify-content: space-between;
+  color: var(--ink-3);
+  font-size: var(--step--2);
+}
+
+@media (max-width: 980px) {
+  .training .t-plan-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .training .t-plan-power {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .training .t-plan-power input[type="range"] {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .training .t-plan-hours,
+  .training .t-plan-row {
+    grid-template-columns: 2.6rem repeat(24, minmax(0, 1fr));
+    gap: 1px;
+  }
+
+  .training .t-plan-matrix {
+    gap: 1px;
+  }
+
+  .training .t-plan-cell {
+    height: 20px;
+    border-radius: 2px;
+  }
+
+  .training .t-plan-cell[data-best]::after {
+    width: 4px;
+    height: 4px;
+  }
+
+  .training .t-plan-headline {
+    font-size: var(--step-0);
+  }
+
+  .training .t-plan-windows {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.3rem;
+  }
+
+  .training .t-plan-window {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 0 0.7rem;
+  }
+
+  .training .t-plan-window small {
+    grid-column: auto;
+    grid-row: 1;
+    grid-column-start: 3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .training .t-plan-cell,
+  .training .t-plan-window {
+    transition: none;
+  }
+}
