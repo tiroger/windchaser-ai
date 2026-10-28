@@ -1,241 +1,487 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import { REVIEW_YEAR_COOKIE } from "@/app/training/year/constants";
 import {
-  activityYear,
-  formatCalendarDate,
-  formatHours,
   formatNumber,
   isDistanceSport,
-  METRIC_LABELS,
-  metricsFor,
-  type Activity,
-  type MetricKey,
+  SPORT_LABELS,
   type SportFilter,
 } from "@/lib/training/activity-types";
-import { progression } from "@/lib/training/metrics/progression";
+import {
+  EARTH_CIRCUMFERENCE_MI,
+  EVEREST_FT,
+  hourLabel,
+  MONTH_NAMES,
+  weekStart,
+  type YearReviewData,
+} from "@/lib/training/metrics/year-review";
+import { withSport } from "@/lib/training/sections";
 
-import ActiveDays from "./ActiveDays";
-import ProgressionChart from "./ProgressionChart";
-import { useTraining } from "./TrainingProvider";
+import ShareCard from "./YearReviewCard";
+import {
+  AroundTheWorld,
+  Climbing,
+  Clock,
+  Seasons,
+  Weekdays,
+  YearBarcode,
+} from "./YearReviewCharts";
+import { Chapter, CountUp, dateRange, shortDate } from "./YearReviewParts";
+import YearRing from "./YearReviewRing";
+import { BiggestDays, Court, GearRaceChart, Places, VersusLastYear } from "./YearReviewStories";
 
-const EARTH_CIRCUMFERENCE_MI = 24_901;
+/** A Tour de France is about 3,400 km. */
+const TOUR_MI = 2_100;
+const DAY_NAMES = ["Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays", "Sundays"];
 
-type Best = { label: string; value: string; activity: Activity };
-
-function bestBy(
-  activities: Activity[],
-  label: string,
-  score: (activity: Activity) => number | null,
-  format: (value: number) => string,
-): Best | null {
-  let top: { activity: Activity; value: number } | null = null;
-  for (const activity of activities) {
-    const value = score(activity);
-    if (value !== null && value > 0 && (!top || value > top.value)) top = { activity, value };
-  }
-  return top ? { label, value: format(top.value), activity: top.activity } : null;
+function yearHref(year: number, filter: SportFilter, defaultYear: number): string {
+  const base = withSport("/training/year", filter);
+  if (year === defaultYear) return base;
+  return `${base}${base.includes("?") ? "&" : "?"}year=${year}`;
 }
 
-/** One season against every other: totals, personal bests, and the calendar. */
+/** The year picker: each year as a bar of its hours, the chosen one lit. */
+function YearPicker({ review, defaultYear }: { review: YearReviewData; defaultYear: number }) {
+  const listRef = useRef<HTMLOListElement>(null);
+  const max = Math.max(1, ...review.years.map((entry) => entry.hours));
+  useEffect(() => {
+    const list = listRef.current;
+    const current = list?.querySelector<HTMLElement>("[aria-current]");
+    if (list && current) {
+      list.scrollLeft = current.offsetLeft - list.clientWidth / 2 + current.offsetWidth / 2;
+    }
+  }, [review.year]);
+  return (
+    <nav className="yr-picker" aria-label="Choose a year">
+      <ol ref={listRef}>
+        {review.years.map((entry) => (
+          <li key={entry.year}>
+            <Link
+              href={yearHref(entry.year, review.filter, defaultYear)}
+              aria-current={entry.year === review.year ? "page" : undefined}
+              onClick={() => {
+                document.cookie = `${REVIEW_YEAR_COOKIE}=${entry.year}; path=/training; samesite=lax`;
+              }}
+              title={`${entry.year}: ${formatNumber(entry.activities)} activities, ${formatNumber(entry.hours)} hours`}
+            >
+              <span
+                className="yr-picker-bar"
+                style={{ "--h": Math.max(0.06, entry.hours / max).toFixed(3) } as React.CSSProperties}
+              />
+              <span className="num">{entry.year}</span>
+            </Link>
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+}
+
+type ChapterEntry = { id: string; label: string };
+
+/** The summary with its figures set in the mono face; bare years stay as text. */
+function Highlighted({ text }: { text: string }) {
+  return text.split(/(\d(?:[\d,.]*\d)?%?)/).map((part, index) =>
+    index % 2 && !/^\d{4}$/.test(part) ? (
+      <strong key={index} className="num">
+        {part}
+      </strong>
+    ) : (
+      part
+    ),
+  );
+}
+
+/**
+ * The Year in review: a long scroll of chapters, each one visual and one line
+ * of copy, built from aggregates the server computed for one year and sport.
+ */
 export default function YearReview({
-  activities,
-  filter,
+  review,
+  defaultYear,
 }: {
-  activities: Activity[];
-  filter: SportFilter;
+  review: YearReviewData;
+  defaultYear: number;
 }) {
-  const { today } = useTraining();
-  const metrics = metricsFor(filter);
-  const [metricChoice, setMetric] = useState<MetricKey>(metrics[0]);
-  const metric = metrics.includes(metricChoice) ? metricChoice : metrics[0];
-  const years = useMemo(
-    () =>
-      Array.from(
-        new Set(activities.map(activityYear).filter((year): year is number => !!year)),
-      ).sort((a, b) => b - a),
-    [activities],
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [live, setLive] = useState(false);
+  const [current, setCurrent] = useState<string>("hero");
+  const { year, filter, totals, window } = review;
+  const distanceSport = isDistanceSport(filter) && totals.distance >= 1;
+  const empty = totals.activities === 0;
+
+  // Reveals: content is visible without JavaScript; once the page is live,
+  // anything below the fold waits for the scroll to reach it.
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    setLive(true);
+    if (typeof IntersectionObserver === "undefined") return;
+    const reveal = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-in");
+            reveal.unobserve(entry.target);
+          }
+        }
+      },
+      { rootMargin: "0px 0px -10% 0px", threshold: 0.1 },
+    );
+    root.querySelectorAll("[data-reveal]").forEach((node) => reveal.observe(node));
+
+    const chapters = new IntersectionObserver(
+      (entries) => {
+        const visible = entries.filter((entry) => entry.isIntersecting);
+        if (visible.length) {
+          setCurrent((visible[0].target as HTMLElement).dataset.chapter ?? "hero");
+        }
+      },
+      { rootMargin: "-45% 0px -54% 0px" },
+    );
+    root.querySelectorAll("[data-chapter]").forEach((node) => chapters.observe(node));
+    return () => {
+      reveal.disconnect();
+      chapters.disconnect();
+    };
+  }, [year, filter]);
+
+  // The progress bar runs on a scroll timeline where the browser has one.
+  useEffect(() => {
+    if (CSS.supports?.("animation-timeline: scroll()")) return;
+    const root = rootRef.current;
+    if (!root) return;
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const max = document.documentElement.scrollHeight - innerHeight;
+      root.style.setProperty("--scroll", String(max > 0 ? scrollY / max : 0));
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    update();
+    addEventListener("scroll", onScroll, { passive: true });
+    return () => removeEventListener("scroll", onScroll);
+  }, []);
+
+  const chapters: ChapterEntry[] = [];
+  const add = (id: string, label: string) => {
+    chapters.push({ id, label });
+    return chapters.length;
+  };
+
+  const fraction = totals.distance / EARTH_CIRCUMFERENCE_MI;
+  const everests = totals.elevation / EVEREST_FT;
+  const topDay = review.weekdays.reduce(
+    (best, day) => (day.hours > best.hours ? day : best),
+    review.weekdays[0],
   );
-  const [selectedYear, setSelectedYear] = useState<number | undefined>();
-  const year = selectedYear && years.includes(selectedYear) ? selectedYear : years[0];
-  const yearActivities = activities.filter((activity) => activityYear(activity) === year);
-  const result = useMemo(() => progression(activities, metric, today), [activities, metric, today]);
+  const weekHours = review.weekdays.reduce((sum, day) => sum + day.hours, 0);
+  const longest = review.bigDays.find((day) => day.key === "longest");
+  const gearTotal = review.gear.entries.reduce((sum, entry) => sum + entry.total, 0);
+  const gearLeader = review.gear.entries[0];
+  const headline = review.comparisons[0];
 
-  if (!year) {
-    return <div className="panel t-empty">No activity history is available yet.</div>;
-  }
-
-  const sum = (pick: (activity: Activity) => number | null) =>
-    yearActivities.reduce((total, activity) => total + (pick(activity) ?? 0), 0);
-  const distance = sum((activity) => activity.distance);
-  const hours = sum((activity) => activity.moving_time);
-  const energy = sum((activity) => activity.kilojoules);
-  const kudos = sum((activity) => activity.kudos_count);
-  const heartRates = yearActivities.flatMap((activity) =>
-    activity.average_heartrate ? [activity.average_heartrate] : [],
-  );
-  const distanceSport = isDistanceSport(filter);
-
-  const stats: Array<[string, string, string?]> = distanceSport
+  const stats: Array<{ label: string; value: number; unit?: string }> = distanceSport
     ? [
-        ["Activities", formatNumber(yearActivities.length)],
-        [
-          "Distance",
-          `${formatNumber(distance)} mi`,
-          filter === "All" || filter === "Ride"
-            ? `${((distance / EARTH_CIRCUMFERENCE_MI) * 100).toFixed(1)}% around the Earth`
-            : undefined,
-        ],
-        ["Moving time", formatHours(hours)],
-        ["Elevation", `${formatNumber(sum((activity) => activity.total_elevation_gain))} ft`],
-        [
-          "Calories",
-          energy ? `${formatNumber(energy)} kcal` : "—",
-          energy ? "from rides with power" : undefined,
-        ],
-        ["Kudos", formatNumber(kudos)],
+        { label: "Distance", value: totals.distance, unit: "mi" },
+        { label: "Moving time", value: totals.hours, unit: "h" },
+        { label: "Elevation", value: totals.elevation, unit: "ft" },
+        { label: filter === "All" ? "Activities" : SPORT_LABELS[filter], value: totals.activities },
       ]
     : [
-        ["Sessions", formatNumber(yearActivities.length)],
-        ["Time played", formatHours(hours)],
-        [
-          "Average session",
-          yearActivities.length ? formatHours(hours / yearActivities.length) : "—",
-        ],
-        [
-          "Average heart rate",
-          heartRates.length
-            ? `${Math.round(heartRates.reduce((a, b) => a + b, 0) / heartRates.length)} bpm`
-            : "—",
-        ],
-        [
-          "Active days",
-          formatNumber(new Set(yearActivities.map((activity) => activity.date.slice(0, 10))).size),
-        ],
-        ["Kudos", formatNumber(kudos)],
+        { label: "Sessions", value: totals.activities },
+        { label: "Hours", value: totals.hours, unit: "h" },
+        { label: "Active days", value: totals.activeDays },
+        {
+          label: "Average session",
+          value: totals.activities ? (totals.hours * 60) / totals.activities : 0,
+          unit: "min",
+        },
       ];
 
-  const sessionsPerDay = new Map<string, Activity[]>();
-  for (const activity of yearActivities) {
-    const day = activity.date.slice(0, 10);
-    sessionsPerDay.set(day, [...(sessionsPerDay.get(day) ?? []), activity]);
-  }
-  const busiest = [...sessionsPerDay.values()].sort((a, b) => b.length - a.length)[0];
+  const sections: React.ReactNode[] = [];
+  if (!empty) {
+    if (distanceSport) {
+      sections.push(
+        <Chapter
+          key="world"
+          id="world"
+          number={add("world", "Around the world")}
+          kicker="Around the world"
+          title={
+            fraction >= 1
+              ? `${fraction.toFixed(2)} times around the Earth`
+              : `${(fraction * 100).toFixed(1)}% of the way around the Earth`
+          }
+          copy={`${formatNumber(totals.distance)} miles: about ${(totals.distance / TOUR_MI).toFixed(1)} Tours de France laid end to end.`}
+          layout="split"
+        >
+          <AroundTheWorld distance={totals.distance} />
+        </Chapter>,
+      );
+      if (totals.elevation >= 1000) {
+        sections.push(
+          <Chapter
+            key="climb"
+            id="climb"
+            number={add("climb", "Climbing")}
+            kicker="Climbing"
+            title={`${formatNumber(totals.elevation)} ft of up`}
+            copy={
+              everests >= 1
+                ? `Enough to climb Everest from sea level ${everests.toFixed(1)} times over.`
+                : `${Math.round(everests * 100)}% of the way up Everest from sea level.`
+            }
+            layout="split-reverse"
+          >
+            <Climbing elevation={totals.elevation} />
+          </Chapter>,
+        );
+      }
+    }
 
-  const bests = (
-    distanceSport
-      ? [
-          bestBy(yearActivities, "Longest distance", (a) => a.distance, (v) => `${formatNumber(v, 1)} mi`),
-          bestBy(yearActivities, "Longest time", (a) => a.moving_time, formatHours),
-          bestBy(yearActivities, "Most elevation", (a) => a.total_elevation_gain, (v) => `${formatNumber(v)} ft`),
-          bestBy(
-            yearActivities,
-            "Fastest average (10+ mi)",
-            (a) => (a.distance >= 10 ? a.average_speed : null),
-            (v) => `${v.toFixed(1)} mph`,
-          ),
-          bestBy(yearActivities, "Peak power", (a) => a.max_watts, (v) => `${formatNumber(v)} W`),
-          bestBy(yearActivities, "Highest Relative Effort", (a) => a.suffer_score, (v) => formatNumber(v)),
-        ]
-      : [
-          bestBy(yearActivities, "Longest session", (a) => a.moving_time, formatHours),
-          busiest && busiest.length > 1
-            ? { label: "Most sessions in a day", value: String(busiest.length), activity: busiest[0] }
-            : null,
-          bestBy(
-            yearActivities,
-            "Hardest session (avg HR)",
-            (a) => a.average_heartrate,
-            (v) => `${Math.round(v)} bpm`,
-          ),
-          bestBy(yearActivities, "Highest Relative Effort", (a) => a.suffer_score, (v) => formatNumber(v)),
-          bestBy(yearActivities, "Most kudos", (a) => a.kudos_count, formatNumber),
-        ]
-  ).filter((best): best is Best => best !== null);
+    sections.push(
+      <Chapter
+        key="ring"
+        id="ring"
+        number={add("ring", "The ring")}
+        kicker="The year as a ring"
+        title={`${formatNumber(totals.activeDays)} days out of ${formatNumber(window.lastIndex + 1)}`}
+        copy={
+          review.streak && review.streak.length > 1
+            ? `Each bar is a day, as long as its hours. The longest streak, ${review.streak.length} days from ${dateRange(review.streak.start, review.streak.end)}, is traced inside the ring.`
+            : "Each bar is a day, as long as its hours, coloured by sport."
+        }
+      >
+        <YearRing days={review.ring} window={window} streak={review.streak} rest={review.rest} />
+      </Chapter>,
+    );
+
+    if (review.clock.peakHour !== null) {
+      sections.push(
+        <Chapter
+          key="clock"
+          id="clock"
+          number={add("clock", "When")}
+          kicker="When you move"
+          title={`Your hour is ${hourLabel(review.clock.peakHour)}`}
+          copy={
+            weekHours > 0
+              ? `${DAY_NAMES[topDay.day]} carried ${Math.round((topDay.hours / weekHours) * 100)}% of the year's hours.`
+              : undefined
+          }
+          layout="split"
+        >
+          <div className="yr-when">
+            <Clock clock={review.clock} />
+            <Weekdays weekdays={review.weekdays} />
+          </div>
+        </Chapter>,
+      );
+    }
+
+    if (review.stream.peak) {
+      sections.push(
+        <Chapter
+          key="seasons"
+          id="seasons"
+          number={add("seasons", "Seasons")}
+          kicker="Seasons"
+          title={
+            review.busiestMonth !== null
+              ? `${MONTH_NAMES[review.busiestMonth]} was peak season`
+              : "The shape of the year"
+          }
+          copy={`Weekly hours by sport. The busiest week began ${shortDate(weekStart(year, review.stream.peak.week))} and held ${formatNumber(review.stream.peak.hours, 1)} hours.`}
+        >
+          <Seasons stream={review.stream} year={year} />
+        </Chapter>,
+      );
+    }
+
+    if (review.bigDays.length) {
+      sections.push(
+        <Chapter
+          key="days"
+          id="days"
+          number={add("days", "Big days")}
+          kicker="Biggest days"
+          title="The days that stood out"
+          copy={
+            longest
+              ? `${longest.activity.name}, ${shortDate(longest.activity.date)}, was the longest at ${longest.display}. Open a card for the details.`
+              : "Open a card for the details."
+          }
+        >
+          <BiggestDays days={review.bigDays} />
+        </Chapter>,
+      );
+    }
+
+    if (review.places && review.places.routes.length > 1) {
+      sections.push(
+        <Chapter
+          key="places"
+          id="places"
+          number={add("places", "Places")}
+          kicker="Favourite places"
+          title={`${formatNumber(review.places.routes.length)} routes, one sketch`}
+          copy={`Every local route laid over the others; the brightest lines are the roads you kept coming back to.${review.places.elsewhere ? ` ${review.places.elsewhere} more happened further afield.` : ""}`}
+          layout="split-reverse"
+        >
+          <Places sketch={review.places} ring={review.ring} />
+        </Chapter>,
+      );
+    }
+
+    if (gearLeader) {
+      sections.push(
+        <Chapter
+          key="gear"
+          id="gear"
+          number={add("gear", "Gear")}
+          kicker="Gear"
+          title={`${gearLeader.name} did the most work`}
+          copy={`${formatNumber(gearLeader.total)} miles, ${Math.round((gearLeader.total / gearTotal) * 100)}% of the year's miles on named gear. Press play to race it again.`}
+          layout="split"
+        >
+          <GearRaceChart race={review.gear} year={year} />
+        </Chapter>,
+      );
+    }
+
+    if (review.court) {
+      const court = review.court;
+      sections.push(
+        <Chapter
+          key="court"
+          id="court"
+          number={add("court", "Pickleball")}
+          kicker="Pickleball"
+          title={`${formatNumber(court.sessions)} sessions on the court`}
+          copy={`Every ball is a session, sized by its length${court.busiestMonth !== null ? `; ${MONTH_NAMES[court.busiestMonth]} was the busiest month` : ""}.${court.previousSessions ? ` ${court.sessions >= court.previousSessions ? "Up" : "Down"} from ${court.previousSessions} in ${year - 1}${window.partial ? " at this point" : ""}.` : ""}`}
+        >
+          <Court court={court} />
+        </Chapter>,
+      );
+    }
+
+    if (headline) {
+      sections.push(
+        <Chapter
+          key="versus"
+          id="versus"
+          number={add("versus", "Versus")}
+          kicker={`Versus ${year - 1}`}
+          title={
+            headline.change === null
+              ? `${year} against ${year - 1}`
+              : `${Math.abs(Math.round(headline.change * 100))}% ${headline.change >= 0 ? "more" : "less"} ${headline.label.toLowerCase()} than ${year - 1}`
+          }
+          copy={
+            window.partial
+              ? `Both years counted to ${shortDate(window.through)}; the dashed line is ${year - 1}.`
+              : `Running totals month by month; the dashed line is ${year - 1}.`
+          }
+        >
+          <VersusLastYear
+            comparisons={review.comparisons}
+            year={year}
+            months={window.partial ? Number(window.through.slice(5, 7)) : 12}
+          />
+        </Chapter>,
+      );
+    }
+
+    sections.push(
+      <Chapter
+        key="card"
+        id="card"
+        number={add("card", "Card")}
+        kicker="The year on one card"
+        title={window.partial ? `${year}, so far` : `That was ${year}`}
+        copy="Save it as an image, share it, then go and start the next one."
+      >
+        <ShareCard review={review} filter={filter} />
+      </Chapter>,
+    );
+  }
 
   return (
-    <section className="t-stack">
-      <div className="t-grid t-grid-wide">
-        <article className="panel">
-          <div className="t-card-head">
-            <div>
-              <span className="label">Your own baseline</span>
-              <h2 className="t-card-title">{year} against every other year</h2>
-            </div>
-            <label className="t-select">
-              <span>Year</span>
-              <select
-                onChange={(event) => setSelectedYear(Number(event.target.value))}
-                value={year}
-              >
-                {years.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <div className="chip-row t-spaced" role="group" aria-label="Comparison metric">
-            {metrics.map((value) => (
-              <button
-                aria-pressed={metric === value}
-                className="chip"
-                key={value}
-                onClick={() => setMetric(value)}
-                type="button"
-              >
-                {METRIC_LABELS[value]}
-              </button>
-            ))}
-          </div>
-          <ProgressionChart
-            progression={result}
-            metric={metric}
-            highlightYear={year}
-            today={today}
-            height={400}
-          />
-        </article>
-        <article className="panel">
-          <span className="label">Season snapshot</span>
-          <h2 className="t-card-title">{year} in numbers</h2>
-          <div className="t-stats is-two">
-            {stats.map(([label, value, note]) => (
-              <span key={label}>
-                <small>{label}</small>
-                <strong className="num">{value}</strong>
-                {note && <em>{note}</em>}
-              </span>
-            ))}
-          </div>
-          <div className="t-subhead">Personal bests · {year}</div>
-          <div className="t-list">
-            {bests.map((best) => (
-              <Link
-                className="t-row"
-                key={best.label}
-                href={`/training/activities/${best.activity.id}`}
-              >
-                <span className="t-row-text">
-                  <strong>{best.label}</strong>
-                  <small>
-                    {best.activity.name} ·{" "}
-                    {formatCalendarDate(best.activity.date, { month: "short", day: "numeric" })}
-                  </small>
-                </span>
-                <span className="t-row-figure num">{best.value}</span>
-              </Link>
-            ))}
-          </div>
-        </article>
+    <div className={`yr${live ? " is-live" : ""}`} ref={rootRef}>
+      <div className="yr-progress" aria-hidden="true">
+        <span />
       </div>
-      <article className="panel">
-        <span className="label">Active days · {year}</span>
-        <ActiveDays activities={activities} year={year} today={today} />
-      </article>
-    </section>
+
+      <header className="yr-hero" data-chapter="hero">
+        <div className="yr-hero-top">
+          <span className="yr-kicker">Year in review · {SPORT_LABELS[filter]}</span>
+          <YearPicker review={review} defaultYear={defaultYear} />
+        </div>
+        <h1 className="yr-title">
+          <span className="sr-only">Year in review, {year}</span>
+          <span className="yr-year" aria-hidden="true">
+            {String(year)
+              .split("")
+              .map((digit, index) => (
+                <span key={`${year}-${index}`} style={{ "--i": index } as React.CSSProperties}>
+                  {digit}
+                </span>
+              ))}
+          </span>
+          {window.partial && <span className="yr-so-far">so far</span>}
+        </h1>
+        <p className="yr-summary">
+          <Highlighted text={review.summary} />
+        </p>
+        {!empty && (
+          <dl className="yr-totals">
+            {stats.map((stat, index) => (
+              <div key={stat.label} style={{ "--i": index } as React.CSSProperties}>
+                <dt>{stat.label}</dt>
+                <dd>
+                  <CountUp className="num" value={stat.value} delay={250 + index * 110} />
+                  {stat.unit && <span className="yr-unit">{stat.unit}</span>}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        )}
+        {!empty && <YearBarcode days={review.ring} window={window} />}
+        {chapters.length > 0 && (
+          <a className="yr-cue" href={`#yr-${chapters[0].id}`}>
+            <span>Scroll through the year</span>
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M8 3v10M4 9l4 4 4-4" />
+            </svg>
+          </a>
+        )}
+      </header>
+
+      {chapters.length > 0 && (
+        <nav className="yr-index" aria-label="Chapters">
+          <ol>
+            {chapters.map((chapter, index) => (
+              <li key={chapter.id}>
+                <a
+                  href={`#yr-${chapter.id}`}
+                  aria-current={current === chapter.id ? "true" : undefined}
+                >
+                  <span className="yr-index-label">{chapter.label}</span>
+                  <span className="num">{String(index + 1).padStart(2, "0")}</span>
+                </a>
+              </li>
+            ))}
+          </ol>
+        </nav>
+      )}
+
+      {sections}
+    </div>
   );
 }
