@@ -176,7 +176,9 @@ function Planner({ data, profile }: { data: RouteForecast; profile: RouteProfile
                 >
                   <span>{windowLabel(data.hours[w.hour], today)}</span>
                   <strong className="num">{formatHours(w.time_s / 3600)}</strong>
-                  <small className={`num ${w.saved_s >= 0 ? "is-faster" : "is-slower"}`}>{minutesVsCalm(w.saved_s)}</small>
+                  <small className={`num ${effectClass(w.saved_s)}`}>
+                    {minutesVsCalm(w.saved_s).replace(/ than calm$/, "")}
+                  </small>
                 </button>
               ))}
             </div>
@@ -414,7 +416,7 @@ function Matrix({
           <>
             <strong>{windowLabel(data.hours[focus], today)}</strong>
             <span className="num">{formatHours(focusWindow.time_s / 3600)}</span>
-            <span className={`num ${focusWindow.saved_s >= 0 ? "is-faster" : "is-slower"}`}>
+            <span className={`num ${effectClass(focusWindow.saved_s)}`}>
               {minutesVsCalm(focusWindow.saved_s)}
             </span>
             <span>{["after dark", "partly in the dark", "in daylight"][daylight[focus]]}</span>
@@ -665,7 +667,7 @@ function HourDetail({
         <span className="unit">moving</span>
       </div>
       <p className="t-plan-phrase">
-        <span className={window.saved_s >= 0 ? "is-faster" : "is-slower"}>{minutesVsCalm(window.saved_s)}</span>
+        <span className={effectClass(window.saved_s)}>{minutesVsCalm(window.saved_s)}</span>
         {phrase ? `, ${phrase}` : ""}.
       </p>
       <div className="stat-row">
@@ -686,7 +688,7 @@ function HourDetail({
       <div className="stat-row">
         <span className="k">Net tailwind on route</span>
         <span className={`v ${net > 0.2 ? "is-faster" : net < -0.2 ? "is-slower" : ""}`}>
-          {net >= 0 ? "+" : "−"}
+          {Math.abs(net) * MPH < 0.05 ? "±" : net > 0 ? "+" : "−"}
           {(Math.abs(net) * MPH).toFixed(1)} mph
         </span>
       </div>
@@ -766,6 +768,12 @@ function meanWind(data: RouteForecast, hour: number): { speed: number; from: num
   const n = Math.max(1, data.cells.length);
   const scalar = data.cells.reduce((s, c) => s + c.speed[hour], 0) / n;
   return { speed: scalar, from: ((Math.atan2(u, v) * 180) / Math.PI + 360) % 360 };
+}
+
+/** Colour only an effect large enough to be named in minutes. */
+function effectClass(saved: number): string {
+  if (Math.abs(saved) < 30) return "";
+  return saved > 0 ? "is-faster" : "is-slower";
 }
 
 function minutesVsCalm(saved: number): string {
