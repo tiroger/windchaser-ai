@@ -124,14 +124,21 @@ function climbCategory(lengthMiles: number, grade: number): Climb["category"] {
  * of up to 15% of the climb so far (at least 40 ft), kept when they gain at
  * least 150 ft at an average of 3% or more.
  */
-export function findClimbs(distance: number[], altitude: number[], grades: number[]): Climb[] {
+export function findClimbs(
+  distance: number[],
+  altitude: number[],
+  grades: number[],
+  minLength = 0,
+): Climb[] {
   const climbs: Climb[] = [];
   let low = 0;
   let peak = 0;
   const close = () => {
     const gain = altitude[peak] - altitude[low];
     const length = distance[peak] - distance[low];
-    if (gain >= 150 && length > 0) {
+    // A climb shorter than the window grades are measured over is below the
+    // track's resolution: usually an altitude glitch, often at the very end.
+    if (gain >= 150 && length > 0 && length >= minLength) {
       const averageGrade = (gain / (length * FEET_PER_MILE)) * 100;
       if (averageGrade >= 3) {
         climbs.push({
@@ -141,7 +148,7 @@ export function findClimbs(distance: number[], altitude: number[], grades: numbe
           length,
           gain,
           averageGrade,
-          maxGrade: Math.max(...grades.slice(low, peak + 1)),
+          maxGrade: Math.max(averageGrade, ...grades.slice(low, peak + 1)),
           category: climbCategory(length, averageGrade),
         });
       }

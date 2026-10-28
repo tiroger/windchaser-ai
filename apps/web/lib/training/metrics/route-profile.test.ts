@@ -81,3 +81,16 @@ describe("sparse saved-route profiles", () => {
   });
 });
 
+describe("climbs at the track's resolution", () => {
+  // A mile of climbing at 5% (264 ft), then a 0.12-mile, 300 ft spike at the end.
+  const miles = Array.from({ length: 23 }, (_, index) => index * 0.06);
+  const feet = miles.map((mile, index) => (index === 22 ? 700 : mile <= 1.2 ? 100 + mile * 264 : 417));
+
+  it("drops climbs shorter than the grade window and never reports max below average", () => {
+    const grades = smoothedGrades(miles, feet, gradeWindow(miles));
+    const climbs = findClimbs(miles, feet, grades, gradeWindow(miles));
+    expect(climbs.every((climb) => climb.length >= gradeWindow(miles))).toBe(true);
+    expect(climbs.every((climb) => climb.maxGrade >= climb.averageGrade)).toBe(true);
+  });
+});
+

@@ -30,7 +30,7 @@ export function useTrackAnalysis(track: RouteTrack) {
     [track],
   );
   const climbs = useMemo(
-    () => findClimbs(track.distance, track.altitude, grades),
+    () => findClimbs(track.distance, track.altitude, grades, gradeWindow(track.distance)),
     [grades, track],
   );
   const steepest = useMemo(
