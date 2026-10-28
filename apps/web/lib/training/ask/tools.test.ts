@@ -112,6 +112,11 @@ describe("totals", () => {
     expect(result.comparison.best_to_date.distance_mi).toEqual({ year: 2026, value: 100 });
   });
 
+  it("breaks a year down by month in one call", async () => {
+    const result = await ok("totals", { period: "year", year: 2026, sport: "Ride", by_month: true });
+    expect(result.by_month).toEqual([{ month: "2026-10", sessions: 3, distance_mi: 100, time_h: 6, elevation_ft: 5100, kj: 4000 }]);
+  });
+
   it("groups by sport and resolves a Monday-to-Sunday week", async () => {
     const result = await ok("totals", { period: "week", week_of: "2026-10-14" });
     expect(result.period).toMatchObject({ from: "2026-10-12", to: "2026-10-18" });

@@ -317,6 +317,7 @@ type TotalsInput = {
   to?: string;
   sport?: SportFilter;
   group_by_sport?: boolean;
+  by_month?: boolean;
   compare_years?: boolean;
 };
 
@@ -337,6 +338,10 @@ const totalsSchema: JsonSchema = {
     to: { ...DATE, description: "For the custom period: last day, YYYY-MM-DD." },
     sport: { type: "string", enum: SPORTS, description: "Restrict to one sport family (default All)." },
     group_by_sport: { type: "boolean", description: "Also break the totals down by sport (default true)." },
+    by_month: {
+      type: "boolean",
+      description: "Also return one row per calendar month in the period, e.g. to find the biggest month of a year in one call.",
+    },
     compare_years: {
       type: "boolean",
       description:
@@ -449,6 +454,18 @@ function totals(input: TotalsInput, data: AskData): ToolOutcome {
   }
   if (input.group_by_sport !== false && (input.sport ?? "All") === "All") {
     result.by_sport = bySport(selected);
+  }
+
+  if (input.by_month) {
+    const months = new Map<string, Activity[]>();
+    for (const activity of selected) {
+      const key = activity.date.slice(0, 7);
+      months.set(key, [...(months.get(key) ?? []), activity]);
+    }
+    if (months.size > 36) throw new ToolInputError("by_month is limited to periods of three years or less");
+    result.by_month = [...months.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, items]) => ({ month, ...slim(totalsOf(items), distanceSport) }));
   }
 
   if (input.compare_years) {
