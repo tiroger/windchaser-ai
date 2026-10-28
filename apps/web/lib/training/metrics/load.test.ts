@@ -40,8 +40,8 @@ const entry = (overrides: Partial<StreamsIndexEntry>): StreamsIndexEntry => ({
 describe("load models", () => {
   // Reference values computed from the fitted equations in the research notebook.
   it("scores average and max heart rate like the fitted summary model", () => {
-    expect(summaryLoad(90, 140, 170, false, anchors)).toBeCloseTo(148.59, 1);
-    expect(summaryLoad(75, 120, 165, true, anchors)).toBeCloseTo(70.17, 1);
+    expect(summaryLoad(90, 140, 170, false, anchors)).toBeCloseTo(153.72, 1);
+    expect(summaryLoad(75, 120, 165, true, anchors)).toBeCloseTo(72.17, 1);
   });
 
   it("scores power alone like the fitted power model", () => {
@@ -57,17 +57,20 @@ describe("load models", () => {
   it("classifies easy riding as low aerobic and hard riding as high aerobic", () => {
     expect(classifyFocus(120, 118, 150, false, anchors)).toBe("lowAerobic");
     expect(classifyFocus(60, 165, 185, false, anchors)).toBe("highAerobic");
-    expect(classifyFocus(60, 150, 190, true, anchors)).toBe("anaerobic");
+    expect(classifyFocus(60, 130, 190, true, anchors)).toBe("anaerobic");
     expect(classifyFocus(60, null, null, false, anchors, 0.9)).toBe("highAerobic");
     expect(classifyFocus(60, null, null, false, anchors, 0.6)).toBe("lowAerobic");
   });
 
   it("uses settings for heart-rate anchors and the fitted values otherwise", () => {
-    expect(loadAnchors({ weightKg: null, restingHr: 45, maxHr: 185, ftpOverride: null })).toEqual({
+    expect(loadAnchors({ weightKg: null, restingHr: 45, maxHr: 185, ftpOverride: null }, [])).toEqual({
       restingHr: 45,
       maxHr: 185,
     });
-    expect(loadAnchors({ weightKg: null, restingHr: 49, maxHr: null, ftpOverride: null })).toEqual(anchors);
+    expect(loadAnchors({ weightKg: null, restingHr: 49, maxHr: null, ftpOverride: null }, [])).toEqual(anchors);
+    // Without a setting, the maximum observed in the data, as the Performance page derives it.
+    const observed = Array.from({ length: 100 }, (_, i) => activity({ id: `m${i}`, date: "2026-10-01T08:00:00", max_heartrate: 150 + (i % 40) }));
+    expect(loadAnchors({ weightKg: null, restingHr: 49, maxHr: null, ftpOverride: null }, observed).maxHr).toBe(189);
   });
 });
 

@@ -530,11 +530,25 @@ def _streams_key(activity_id: str) -> str:
     return f"{os.getenv('STREAMS_S3_PREFIX', 'streams/')}{activity_id}.json"
 
 
-def _heart_rate_anchors() -> tuple[float, float]:
+def _observed_max_hr(activities: list[dict[str, Any]]) -> float | None:
+    """The 99th percentile of activity maxima, as the web app derives it."""
+    maxima = sorted(
+        float(a["max_heartrate"])
+        for a in activities
+        if isinstance(a.get("max_heartrate"), (int, float)) and 0 < a["max_heartrate"] < 230
+    )
+    if not maxima:
+        return None
+    observed = maxima[min(len(maxima) - 1, int(len(maxima) * 0.99))]
+    return observed if observed > 120 else None
+
+
+def _heart_rate_anchors(activities: list[dict[str, Any]] | None = None) -> tuple[float, float]:
     """
     Resting and maximum heart rate for exercise load: the owner's athlete
-    settings where set, else the values the load model was fitted with. The web
-    app applies the same rule to its fallback models, so both sides agree.
+    settings where set, else the maximum observed across activities, else the
+    fallbacks. The web app applies the same rule to its fallback models, so
+    both sides agree.
     """
     settings = _read_json(os.getenv("SETTINGS_S3_KEY", "settings.json"), {})
     athlete = settings.get("athlete") if isinstance(settings, dict) else None
@@ -543,9 +557,10 @@ def _heart_rate_anchors() -> tuple[float, float]:
     def bounded(value: Any, low: float, high: float, default: float) -> float:
         return float(value) if isinstance(value, (int, float)) and low <= value <= high else default
 
+    fallback_max = _observed_max_hr(activities or []) or exercise_load.DEFAULT_MAX_HR
     rest = bounded(athlete.get("restingHr"), 25, 110, exercise_load.DEFAULT_REST_HR)
-    maximum = bounded(athlete.get("maxHr"), 120, 230, exercise_load.DEFAULT_MAX_HR)
-    return (rest, maximum) if maximum > rest else (exercise_load.DEFAULT_REST_HR, exercise_load.DEFAULT_MAX_HR)
+    maximum = bounded(athlete.get("maxHr"), 120, 230, fallback_max)
+    return (rest, maximum) if maximum > rest else (exercise_load.DEFAULT_REST_HR, fallback_max)
 
 
 _NO_LOAD = {"exercise_load": None, "exercise_load_model": exercise_load.MODEL_VERSION, "vo2_power": None}
@@ -886,7 +901,7 @@ def main(event: dict[str, Any], context: Any) -> dict[str, Any]:
     streams_fetched = 0
     stored_scored = 0
     if urgent or optional or backfill:
-        anchors = _heart_rate_anchors()
+        anchors = _heart_rate_anchors(activities)
         if urgent:
             streams_fetched += _fetch_streams_for(
                 urgent, access_token, index, deadline, len(urgent), anchors=anchors

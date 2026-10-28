@@ -13,13 +13,15 @@
  * The second-by-second model runs in the sync worker
  * (services/training_sync/exercise_load.py) and arrives as
  * `exercise_load` on the streams index; the models below are its fallbacks.
- * Heart rate is expressed as a fraction of reserve between HEART_RATE_ANCHORS:
- * Garmin's cycling maximum for this rider and the app's default resting heart
- * rate. Athlete settings replace them when set (resting always, maximum when
- * not blank), on both sides.
+ * Heart rate is expressed as a fraction of reserve between resting and maximum
+ * heart rate: athlete settings where set, otherwise the 99th percentile of
+ * activity maxima (as the Performance page derives it), otherwise these
+ * fallbacks. The fit used the rider's measured anchors, which stay out of the
+ * repository; setting them in athlete settings reproduces it exactly. Both
+ * sides apply the same rule.
  */
 
-export const HEART_RATE_ANCHORS = { restingHr: 49, maxHr: 191 };
+export const HEART_RATE_ANCHORS = { restingHr: 49, maxHr: 190 };
 
 /**
  * Summary model, from average and max heart rate (437 activities):

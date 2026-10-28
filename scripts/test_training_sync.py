@@ -466,7 +466,7 @@ def _recursion(cells):
 
 class ExerciseLoadTests(unittest.TestCase):
     def test_steady_effort_matches_the_written_out_model(self):
-        rest, maximum = 49.0, 191.0
+        rest, maximum = 49.0, 190.0
         streams = _steady(60, 140)
         x = (140 - rest) / (maximum - rest)
         expected = _recursion([x] * 720)
@@ -502,9 +502,9 @@ class ExerciseLoadTests(unittest.TestCase):
 
     def test_vo2_power_extrapolates_steady_riding_to_max_heart_rate(self):
         streams = _steady(30, 140, watts=200)
-        result = exercise_load.vo2_power(streams["time"], streams["watts"], streams["heartrate"], 49, 191)
+        result = exercise_load.vo2_power(streams["time"], streams["watts"], streams["heartrate"], 49, 190)
         slope = exercise_load.VO2_PARAMS["SLOPE"]
-        self.assertAlmostEqual(result["watts"], 200 + (191 - 140) / slope, places=0)
+        self.assertAlmostEqual(result["watts"], 200 + (190 - 140) / slope, places=0)
         self.assertGreaterEqual(result["segments"], 2)
 
     def test_vo2_power_needs_steady_riding(self):

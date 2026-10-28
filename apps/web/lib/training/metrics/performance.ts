@@ -259,12 +259,7 @@ export function buildPerformanceModel(
       ? { ...estimate, source: "estimate" as const }
       : null;
 
-  // A chest strap or wrist sensor occasionally spikes; the 99th percentile of
-  // per-activity maxima ignores those while still reaching genuine all-out days.
-  const maxima = activities
-    .flatMap((activity) => (activity.max_heartrate && activity.max_heartrate < 230 ? [activity.max_heartrate] : []))
-    .sort((a, b) => a - b);
-  const observedMax = maxima.length ? maxima[Math.min(maxima.length - 1, Math.floor(maxima.length * 0.99))] : 0;
+  const observedMax = observedMaxHr(activities);
   const maxHr = settings.maxHr ?? (observedMax > 120 ? observedMax : 190);
   const heartRate = {
     restingHr: settings.restingHr,
@@ -472,9 +467,22 @@ export type ExerciseLoadSummary = {
   anchors: HeartRateAnchors;
 };
 
-/** Settings first; otherwise the values the load models were fitted with. */
-export function loadAnchors(settings: AthleteSettings): HeartRateAnchors {
-  const maxHr = settings.maxHr ?? HEART_RATE_ANCHORS.maxHr;
+/**
+ * A chest strap or wrist sensor occasionally spikes; the 99th percentile of
+ * per-activity maxima ignores those while still reaching genuine all-out days.
+ * 0 when there is too little heart-rate data to say.
+ */
+export function observedMaxHr(activities: Activity[]): number {
+  const maxima = activities
+    .flatMap((activity) => (activity.max_heartrate && activity.max_heartrate < 230 ? [activity.max_heartrate] : []))
+    .sort((a, b) => a - b);
+  const observed = maxima.length ? maxima[Math.min(maxima.length - 1, Math.floor(maxima.length * 0.99))] : 0;
+  return observed > 120 ? observed : 0;
+}
+
+/** Settings first, then the observed maximum, then the fallbacks. */
+export function loadAnchors(settings: AthleteSettings, activities: Activity[] = []): HeartRateAnchors {
+  const maxHr = settings.maxHr ?? (observedMaxHr(activities) || HEART_RATE_ANCHORS.maxHr);
   const restingHr = settings.restingHr ?? HEART_RATE_ANCHORS.restingHr;
   return maxHr > restingHr ? { restingHr, maxHr } : HEART_RATE_ANCHORS;
 }
@@ -488,7 +496,7 @@ export function exerciseLoadSummary(
   today: CalendarDate,
   garmin: GarminLoads = {},
 ): ExerciseLoadSummary {
-  const anchors = loadAnchors(settings);
+  const anchors = loadAnchors(settings, activities);
   const loads = exerciseLoads(activities, index, anchors, garmin);
   const series = acuteChronicSeries(activities, loads, today).slice(-EXERCISE_SERIES_DAYS);
   const todayIso = isoDate(today);

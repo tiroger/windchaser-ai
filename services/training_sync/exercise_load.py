@@ -45,12 +45,12 @@ PARAMS: dict[str, float] = {
     "X_MAX": 1.15,
 }
 
-# Heart-rate anchors the parameters were fitted with: Garmin's cycling maximum
-# for this rider, and the web app's default resting heart rate (Garmin's own
-# reading moves between 46 and 50; fitting at 48 instead changed nothing).
-# Athlete settings override both when set.
+# Fallback heart-rate anchors. The worker uses athlete settings where set and
+# otherwise the 99th percentile of activity maxima, like the web app. The fit
+# used the rider's measured anchors, which stay out of this public repository;
+# setting them in athlete settings reproduces it exactly.
 DEFAULT_REST_HR = 49.0
-DEFAULT_MAX_HR = 191.0
+DEFAULT_MAX_HR = 190.0
 
 STEP_SECONDS = 5.0
 MIN_FILL_SECONDS = 10.0
