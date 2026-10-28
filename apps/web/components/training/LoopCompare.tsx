@@ -27,7 +27,7 @@ const CHANNELS: Channel[] = [
 ];
 
 /** Bins across the longer ride: fine enough for climbs, coarse enough to calm power. */
-const BINS = 160;
+const BINS = 120;
 
 function usable(samples: StreamSamples | undefined, key: Channel["key"]): boolean {
   const values = samples?.[key];

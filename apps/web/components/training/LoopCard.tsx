@@ -12,7 +12,7 @@ import type { ActivityStream } from "@/lib/training/metrics/performance";
 
 import Chart, { axisText, splitLine, tooltip, useChartPalette } from "./Chart";
 import LoopCompare from "./LoopCompare";
-import { ordinal, rideDate } from "./loop-format";
+import { DATE_AXIS_LABELS, durationAxis, ordinal, rideDate } from "./loop-format";
 
 type Metric = "time" | "speed" | "power";
 
@@ -100,12 +100,18 @@ export default function LoopCard({
       },
       xAxis: {
         type: "time",
-        axisLabel: { ...text, hideOverlap: true },
+        axisLabel: { ...text, hideOverlap: true, formatter: DATE_AXIS_LABELS },
         splitLine: { show: false },
       },
       yAxis: {
         type: "value",
         scale: true,
+        ...(isTime
+          ? durationAxis(
+              chronological.map((ride) => ride.movingSeconds!),
+              60,
+            )
+          : {}),
         axisLabel: {
           ...text,
           formatter: (value: number) =>
@@ -213,9 +219,9 @@ export default function LoopCard({
               <th className="is-num">Avg speed</th>
               <th className="is-num">NP</th>
               <th className="is-num">Avg HR</th>
-              <th>
-                <span className="sr-only">Compare</span>
-              </th>
+              {/* An absolutely positioned visually-hidden label would escape the
+                  scroll container and widen the page on phones. */}
+              <th aria-label="Compare" />
             </tr>
           </thead>
           <tbody>
@@ -256,8 +262,8 @@ export default function LoopCard({
       )}
       <p className="t-note">
         Rides are matched by GPS track: same start and finish, the same roads in the same direction,
-        and a distance within 10%. Ranked by average speed, since recorded distance varies a
-        little from ride to ride.
+        and a distance within 10%. Ranked by average speed, since recorded distance varies a little
+        from ride to ride.
       </p>
 
       {current && compare && (

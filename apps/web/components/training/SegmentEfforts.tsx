@@ -10,7 +10,7 @@ import { formatNumber } from "@/lib/training/activity-types";
 import type { EffortWeather, SegmentEffortRow } from "@/lib/training/segments";
 
 import Chart, { axisText, splitLine, tooltip, useChartPalette } from "./Chart";
-import { ordinal, rideDate } from "./loop-format";
+import { DATE_AXIS_LABELS, durationAxis, ordinal, rideDate } from "./loop-format";
 
 const MPH_PER_MS = 2.23694;
 
@@ -116,10 +116,12 @@ export default function SegmentEfforts({
           })}
         </ul>
       )}
-      <p className="t-note">
-        Ranked against every effort WindChaser has recorded on each segment. Weather is the hourly
-        reanalysis for when you rode it.
-      </p>
+      {segments.length > 0 && (
+        <p className="t-note">
+          Ranked against every effort WindChaser has recorded on each segment. Weather is the
+          hourly reanalysis for when you rode it.
+        </p>
+      )}
     </article>
   );
 }
@@ -135,7 +137,7 @@ function SegmentHistory({ row, activityId }: { row: SegmentEffortRow; activityId
     const isThis = (entry: SegmentEffortRow["history"][number]) =>
       entry.activityId === activityId && entry.elapsedSeconds === row.elapsedSeconds;
     return {
-      grid: { top: 12, left: 46, right: 12, bottom: 24 },
+      grid: { top: 22, left: 46, right: 12, bottom: 24 },
       tooltip: {
         ...tooltip(palette),
         trigger: "item",
@@ -151,13 +153,14 @@ function SegmentHistory({ row, activityId }: { row: SegmentEffortRow; activityId
       },
       xAxis: {
         type: "time",
-        axisLabel: { ...text, hideOverlap: true },
+        axisLabel: { ...text, hideOverlap: true, formatter: DATE_AXIS_LABELS },
         splitLine: { show: false },
       },
       yAxis: {
         type: "value",
         scale: true,
         inverse: true,
+        ...durationAxis(row.history.map((entry) => entry.elapsedSeconds)),
         axisLabel: { ...text, formatter: (value: number) => formatDuration(value) },
         splitLine: splitLine(palette),
       },

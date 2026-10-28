@@ -288,7 +288,7 @@
 
 .training .t-loop-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 0.6rem;
   margin-top: 0.3rem;
   list-style: none;
@@ -427,5 +427,18 @@
 
   .training .t-loop-overlays {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Four columns on a phone: let the labels wrap rather than push the
+     difference out of view. */
+  .training .t-loop-delta th,
+  .training .t-loop-delta td {
+    padding-left: 0.3rem;
+    padding-right: 0.3rem;
+    font-size: var(--step--2);
+  }
+
+  .training .t-loop-delta td:first-child {
+    white-space: normal;
   }
 }
