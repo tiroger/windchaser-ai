@@ -721,40 +721,68 @@ function bigDay(
   };
 }
 
-/** The year's standout days: longest, most climbing, fastest and hardest. */
-export function biggestDays(activities: Activity[], filter: SportFilter): BigDay[] {
-  const days = isDistanceSport(filter)
+/**
+ * The year's standout days: longest, most climbing, fastest and hardest. One
+ * ride can win several; it is shown once, and the next category in the
+ * reserve list fills its place, so four cards are four different days.
+ */
+export function biggestDays(activities: Activity[], filter: SportFilter, count = 4): BigDay[] {
+  const candidates: Array<() => BigDay | null> = isDistanceSport(filter)
     ? [
-        bigDay("longest", "Longest", topBy(activities, (a) => a.distance), (v) =>
-          `${formatNumber(v, 1)} mi`,
-        ),
-        bigDay("climbing", "Most climbing", topBy(activities, (a) => a.total_elevation_gain), (v) =>
-          `${formatNumber(v)} ft`,
-        ),
-        bigDay(
-          "fastest",
-          "Fastest",
-          topBy(activities, (a) => (a.distance >= 10 ? a.average_speed : null)),
-          (v) => `${v.toFixed(1)} mph`,
-        ),
-        bigDay("hardest", "Hardest", topBy(activities, (a) => a.suffer_score), (v) =>
-          `${formatNumber(v)} RE`,
-        ),
+        () =>
+          bigDay("longest", "Longest", topBy(activities, (a) => a.distance), (v) =>
+            `${formatNumber(v, 1)} mi`,
+          ),
+        () =>
+          bigDay("climbing", "Most climbing", topBy(activities, (a) => a.total_elevation_gain), (v) =>
+            `${formatNumber(v)} ft`,
+          ),
+        () =>
+          bigDay(
+            "fastest",
+            "Fastest",
+            topBy(activities, (a) => (a.distance >= 10 ? a.average_speed : null)),
+            (v) => `${v.toFixed(1)} mph`,
+          ),
+        () =>
+          bigDay("hardest", "Hardest", topBy(activities, (a) => a.suffer_score), (v) =>
+            `${formatNumber(v)} RE`,
+          ),
+        () => bigDay("time", "Most time", topBy(activities, (a) => a.moving_time), formatHours),
+        () =>
+          bigDay(
+            "power",
+            "Strongest",
+            topBy(activities, (a) => a.weighted_average_watts),
+            (v) => `${formatNumber(v)} W`,
+          ),
+        () => bigDay("kudos", "Most kudos", topBy(activities, (a) => a.kudos_count), formatNumber),
       ]
     : [
-        bigDay("longest", "Longest session", topBy(activities, (a) => a.moving_time), formatHours),
-        bigDay("hardest", "Hardest", topBy(activities, (a) => a.suffer_score), (v) =>
-          `${formatNumber(v)} RE`,
-        ),
-        bigDay(
-          "heart",
-          "Highest heart rate",
-          topBy(activities, (a) => a.average_heartrate),
-          (v) => `${Math.round(v)} bpm`,
-        ),
-        bigDay("kudos", "Most kudos", topBy(activities, (a) => a.kudos_count), formatNumber),
+        () => bigDay("longest", "Longest session", topBy(activities, (a) => a.moving_time), formatHours),
+        () =>
+          bigDay("hardest", "Hardest", topBy(activities, (a) => a.suffer_score), (v) =>
+            `${formatNumber(v)} RE`,
+          ),
+        () =>
+          bigDay(
+            "heart",
+            "Highest heart rate",
+            topBy(activities, (a) => a.average_heartrate),
+            (v) => `${Math.round(v)} bpm`,
+          ),
+        () => bigDay("kudos", "Most kudos", topBy(activities, (a) => a.kudos_count), formatNumber),
       ];
-  return days.filter((day): day is BigDay => day !== null);
+  const days: BigDay[] = [];
+  const used = new Set<string>();
+  for (const candidate of candidates) {
+    if (days.length >= count) break;
+    const day = candidate();
+    if (!day || used.has(day.activity.id)) continue;
+    used.add(day.activity.id);
+    days.push(day);
+  }
+  return days;
 }
 
 // ----------------------------------------------------------------- gear --

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { encodePolyline } from "../polyline";
 import { activity } from "../test-fixtures";
 import {
+  biggestDays,
   buildYearReview,
   courtChapter,
   dayOfYear,
@@ -266,6 +267,26 @@ describe("summary sentence", () => {
         busiestMonth: null,
       }),
     ).toBe("No runs were logged in 2019.");
+  });
+});
+
+describe("biggest days", () => {
+  it("shows a ride once and fills its place from the reserve categories", () => {
+    const days = biggestDays(
+      [
+        activity({ id: "epic", date: "2025-07-30T08:00:00", distance: 80, total_elevation_gain: 8000, suffer_score: 600, average_speed: 12 }),
+        activity({ id: "flat", date: "2025-06-07T08:00:00", distance: 93, total_elevation_gain: 2000, suffer_score: 300, average_speed: 18 }),
+        activity({ id: "spin", date: "2025-02-01T08:00:00", distance: 20, moving_time: 4, average_speed: 22 }),
+        activity({ id: "power", date: "2025-03-01T08:00:00", distance: 5, weighted_average_watts: 300 }),
+      ],
+      "Ride",
+    );
+    expect(days.map((day) => [day.key, day.activity.id])).toEqual([
+      ["longest", "flat"],
+      ["climbing", "epic"],
+      ["fastest", "spin"],
+      ["power", "power"],
+    ]);
   });
 });
 
