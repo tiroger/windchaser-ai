@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findClimbs, gradeColor, GRADE_SCALE, smoothedGrades, summarizeRange } from "./route-profile";
+import { findClimbs, gradeColor, GRADE_SCALE, gradeWindow, smoothedGrades, summarizeRange } from "./route-profile";
 
 // A mile of flat, two miles climbing 5% (528 ft), then a mile descending 5%.
 const distance = Array.from({ length: 401 }, (_, index) => index * 0.01);
@@ -61,3 +61,23 @@ describe("route profile", () => {
     expect(range.grade).toBeCloseTo(5);
   });
 });
+
+describe("sparse saved-route profiles", () => {
+  // A 120-mile route downsampled to 2,000 points: one every 0.06 mi.
+  const sparse = Array.from({ length: 2000 }, (_, index) => index * 0.06);
+  const flat = sparse.map(() => 100);
+  flat[1000] = 160; // One GPS altitude glitch.
+
+  it("measures grade over at least four samples", () => {
+    expect(gradeWindow(sparse)).toBeCloseTo(0.24);
+    expect(gradeWindow(distance)).toBeCloseTo(0.1);
+  });
+
+  it("does not turn a single glitch into a wall", () => {
+    const naive = Math.max(...smoothedGrades(sparse, flat));
+    const adaptive = Math.max(...smoothedGrades(sparse, flat, gradeWindow(sparse)));
+    expect(naive).toBeGreaterThan(15);
+    expect(adaptive).toBeLessThan(5);
+  });
+});
+
