@@ -261,7 +261,11 @@ export function GearRaceChart({ race, year }: { race: GearRace; year: number }) 
   return (
     <div className="yr-race" ref={ref}>
       <div className="yr-race-stage" style={{ height: entries.length * 58 }}>
-        <span className="yr-race-month" aria-hidden="true">
+        <span
+          className="yr-race-month"
+          aria-hidden="true"
+          style={{ fontSize: `min(${entries.length * 58 * 0.9}px, clamp(4rem, 11vw, 8.5rem))` }}
+        >
           {MONTH_NAMES[month].slice(0, 3)}
         </span>
         {entries.map((entry) => {

@@ -237,7 +237,7 @@ describe("summary sentence", () => {
         busiestMonth: null,
       }),
     ).toBe(
-      "So far in 2026 you've covered 2,800 miles across 151 rides and climbed 170,285 ft — 40% more miles than this time in 2025.",
+      "So far in 2026 you've covered 2,800 miles across 151 rides and climbed 170,285 ft — 40% more miles than 2025 at this point.",
     );
   });
 
@@ -254,6 +254,19 @@ describe("summary sentence", () => {
     ).toBe(
       "In 2025 you played 23 sessions over 41 hours — about the same time as 2024, with March the biggest month.",
     );
+  });
+
+  it("counts a short year in minutes", () => {
+    expect(
+      yearSummary({
+        year: 2025,
+        filter: "Run",
+        partial: false,
+        totals: totals({ activities: 1, distance: 0.6, hours: 0.3, elevation: 0 }),
+        previous: null,
+        busiestMonth: 0,
+      }),
+    ).toBe("In 2025 you logged 1 run over 18 minutes.");
   });
 
   it("handles an empty year", () => {

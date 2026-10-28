@@ -208,7 +208,8 @@ export default function YearReview({
 
   const sections: React.ReactNode[] = [];
   if (!empty) {
-    if (distanceSport) {
+    // Under a hundred miles the globe would show a speck; skip the chapter.
+    if (distanceSport && totals.distance >= 100) {
       sections.push(
         <Chapter
           key="world"
@@ -446,7 +447,12 @@ export default function YearReview({
               <div key={stat.label} style={{ "--i": index } as React.CSSProperties}>
                 <dt>{stat.label}</dt>
                 <dd>
-                  <CountUp className="num" value={stat.value} delay={250 + index * 110} />
+                  <CountUp
+                    className="num"
+                    value={stat.value}
+                    digits={stat.value < 10 && stat.value % 1 ? 1 : 0}
+                    delay={250 + index * 110}
+                  />
                   {stat.unit && <span className="yr-unit">{stat.unit}</span>}
                 </dd>
               </div>

@@ -583,6 +583,10 @@ export function sportNoun(filter: SportFilter, count: number): string {
 }
 
 function roundHours(hours: number): string {
+  if (hours < 1) {
+    const minutes = Math.max(1, Math.round(hours * 60));
+    return minutes === 1 ? "1 minute" : `${minutes} minutes`;
+  }
   const rounded = Math.round(hours);
   return rounded === 1 ? "1 hour" : `${formatNumber(rounded)} hours`;
 }
@@ -636,7 +640,7 @@ export function yearSummary({
   let comparison: string | null = null;
   if (then > 0) {
     const change = now / then - 1;
-    const against = partial ? `this time in ${year - 1}` : `${year - 1}`;
+    const against = partial ? `${year - 1} at this point` : `${year - 1}`;
     if (Math.abs(change) < 0.03) {
       comparison = `about the same ${onMiles ? "mileage" : "time"} as ${against}`;
     } else {
