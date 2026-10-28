@@ -36,6 +36,14 @@ export const SOURCE_LABELS: Record<ExerciseLoadSource, string> = {
   power: "Power only",
 };
 
+/** For tight spaces such as a stat label. */
+export const SOURCE_SHORT: Record<ExerciseLoadSource, string> = {
+  garmin: "Garmin",
+  detailed: "1 s heart rate",
+  summary: "avg heart rate",
+  power: "power",
+};
+
 export type FocusCategory = "lowAerobic" | "highAerobic" | "anaerobic";
 
 export const FOCUS_CATEGORIES: FocusCategory[] = ["lowAerobic", "highAerobic", "anaerobic"];
