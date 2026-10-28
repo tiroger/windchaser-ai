@@ -16,9 +16,10 @@
  * Heart rate is expressed as a fraction of reserve between resting and maximum
  * heart rate: athlete settings where set, otherwise the 99th percentile of
  * activity maxima (as the Performance page derives it), otherwise these
- * fallbacks. The fit used the rider's measured anchors, which stay out of the
- * repository; setting them in athlete settings reproduces it exactly. Both
- * sides apply the same rule.
+ * fallbacks. Every heart-rate model here and in the worker was fitted at
+ * resting 49 and the 99th percentile of activity maxima, the anchors the app
+ * derives without settings, so it is calibrated out of the box. Both sides
+ * apply the same rule.
  */
 
 export const HEART_RATE_ANCHORS = { restingHr: 49, maxHr: 190 };
@@ -37,9 +38,9 @@ export const HEART_RATE_ANCHORS = { restingHr: 49, maxHr: 190 };
 export const SUMMARY_MODEL = {
   intercept: -1.6503,
   logMinutes: 0.5572,
-  reserve: 1.446,
-  maxReserve: 2.9366,
-  reserveSquared: 1.6502,
+  reserve: 1.4256,
+  maxReserve: 2.8952,
+  reserveSquared: 1.6041,
   pickleball: 1.0021,
   pickleballLogMinutes: -0.2498,
   smear: 1.0382,
@@ -75,8 +76,8 @@ export const POWER_MODEL = {
 export const FOCUS_MODEL = {
   weights: {
     lowAerobic: [0, 0, 0, 0, 0],
-    highAerobic: [-26.487, 18.572, 18.818, -0.342, -2.555],
-    anaerobic: [-13.721, -7.032, 12.199, 0.776, 4.946],
+    highAerobic: [-26.532, 18.344, 18.585, -0.343, -2.552],
+    anaerobic: [-13.739, -6.975, 12.093, 0.772, 4.949],
   },
   powerHighAerobic: 0.77,
   /** A four-week split is "<category> focus" once one category holds this share. */
@@ -92,7 +93,7 @@ export const LOAD_RATIO = { optimalFrom: 0.8, highFrom: 1.5, veryHighFrom: 2.0 }
 /**
  * VO2max: the median of per-ride estimates over a trailing 42 days, at least
  * three rides. Against Garmin's own per-ride cycling VO2max (in the FIT
- * files), the newest 20% (20 rides) scored MAE 1.2 ml/kg/min, bias -0.3, with
+ * files), the newest 20% (19 rides) scored MAE 1.4 ml/kg/min, bias -0.8, with
  * no offset applied (offset stays 0: the ACSM equation is used as published).
  */
 export const VO2MAX_MODEL = {

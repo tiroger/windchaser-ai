@@ -16,7 +16,9 @@ Heart rate is averaged into STEP_SECONDS cells; a cell inside a recording gap
 longer than the fill limit is a pause and counts as rest (x = 0), so EPOC
 decays through a cafe stop as it would on the watch.
 
-How the numbers were fitted: 379 rides, Zwift rides and pickleball sessions
+How the numbers were fitted: heart rate as a fraction of reserve between a
+resting 49 and the 99th percentile of activity maxima (the anchors the app
+derives by default, so it is calibrated without any settings); 379 rides, Zwift rides and pickleball sessions
 from 2024 onwards with Garmin FIT files (1 Hz heart rate) and Garmin's
 `activityTrainingLoad` as the target; scipy least_squares, soft-L1 loss on
 residuals scaled by 1/sqrt(load + 20), trained on the oldest 80% and validated
@@ -34,21 +36,21 @@ import math
 from statistics import median
 from typing import Any
 
-MODEL_VERSION = "epoc-f2-1"
+MODEL_VERSION = "epoc-f2-2"
 
 # ------------------------------------------------------------ parameters --
 
 PARAMS: dict[str, float] = {
-    "A": 7.1175,
+    "A": 6.8085,
     "P": 3.1294,
     "TAU": 229.63,
     "X_MAX": 1.15,
 }
 
 # Fallback heart-rate anchors. The worker uses athlete settings where set and
-# otherwise the 99th percentile of activity maxima, like the web app. The fit
-# used the rider's measured anchors, which stay out of this public repository;
-# setting them in athlete settings reproduces it exactly.
+# otherwise the 99th percentile of activity maxima, like the web app; the
+# parameters above were fitted at exactly those defaults (resting 49, observed
+# maximum), so these constants only matter when there are no activities.
 DEFAULT_REST_HR = 49.0
 DEFAULT_MAX_HR = 190.0
 
@@ -57,8 +59,8 @@ MIN_FILL_SECONDS = 10.0
 VALID_HR = (35.0, 230.0)
 
 # VO2max from steady riding. Heart rate rises about SLOPE bpm per watt within a
-# ride (0.347: the pooled within-ride slope of steady stretches across 131 rides
-# since 2024), so each steady stretch extrapolates to the power that would bring
+# ride (0.348: the pooled within-ride slope of steady stretches across 128 rides
+# since 2024, at the default anchors), so each steady stretch extrapolates to the power that would bring
 # heart rate to its maximum.
 VO2_PARAMS: dict[str, float] = {
     "WINDOW_SECONDS": 240,
@@ -69,7 +71,7 @@ VO2_PARAMS: dict[str, float] = {
     "MIN_RESERVE": 0.55,
     "MAX_RESERVE": 0.90,
     "MAX_HR_SPREAD": 20,
-    "SLOPE": 0.347,
+    "SLOPE": 0.348,
     "MIN_SEGMENTS": 2,
 }
 
