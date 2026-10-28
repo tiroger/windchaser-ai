@@ -3,6 +3,7 @@ import "server-only";
 import { haversineM } from "../geo";
 import type { LatLon, Segment } from "../types";
 import { stravaConfig } from "./env";
+import { forgetStravaCredentials } from "./secrets";
 
 const API = "https://www.strava.com/api/v3";
 
@@ -81,6 +82,19 @@ export async function accessToken(): Promise<string> {
   if (tokenState && Date.now() < tokenState.expiresAt - 60_000) {
     return tokenState.token;
   }
+  try {
+    return await refreshAccessToken();
+  } catch (error) {
+    // The workers rotate the shared refresh token and write it back to the
+    // secret; this container may still hold the old one. Read it again once.
+    forgetStravaCredentials();
+    return refreshAccessToken().catch(() => {
+      throw error;
+    });
+  }
+}
+
+async function refreshAccessToken(): Promise<string> {
   const config = await stravaConfig();
   if (!config) {
     throw new Error("No Strava credentials available from env or Secrets Manager.");

@@ -363,6 +363,52 @@ def test_profiles_stop_at_the_quota_ceiling() -> None:
     assert added == 0, "past the ceiling, nothing discretionary may run"
 
 
+def test_token_refresh_reads_the_shared_secret_fresh() -> None:
+    """The training worker shares the refresh token and may have rotated it."""
+    import json
+
+    class Secrets:
+        def __init__(self) -> None:
+            self.value = {"STRAVA_CLIENT_ID": "1", "STRAVA_CLIENT_SECRET": "s", "STRAVA_REFRESH_TOKEN": "old", "STRAVA_VERIFY_TOKEN": "v"}
+            self.writes: list[dict] = []
+
+        def get_secret_value(self, SecretId: str) -> dict:
+            return {"SecretString": json.dumps(self.value)}
+
+        def put_secret_value(self, SecretId: str, SecretString: str) -> None:
+            self.value = json.loads(SecretString)
+            self.writes.append(self.value)
+
+    secrets = Secrets()
+    sent: list[str] = []
+    import os
+
+    saved = (strava._secrets, strava._credentials, strava._token, strava._http)
+    saved_arn = os.environ.get("STRAVA_SECRET_ARN")
+    try:
+        os.environ["STRAVA_SECRET_ARN"] = "arn:test"
+        strava._secrets, strava._credentials, strava._token = secrets, None, None
+        strava.credentials()
+        # Another worker rotates the token after this container cached the secret.
+        secrets.value = {**secrets.value, "STRAVA_REFRESH_TOKEN": "rotated-elsewhere"}
+
+        def fake_http(url: str, *, data: dict | None = None, token: str | None = None) -> dict:
+            sent.append((data or {}).get("refresh_token", ""))
+            return {"access_token": "a", "expires_at": 9_999_999_999, "refresh_token": "newest"}
+
+        strava._http = fake_http
+        assert strava.access_token() == "a"
+        assert sent == ["rotated-elsewhere"], sent
+        assert secrets.writes[-1]["STRAVA_REFRESH_TOKEN"] == "newest"
+        assert secrets.writes[-1]["STRAVA_VERIFY_TOKEN"] == "v"
+    finally:
+        strava._secrets, strava._credentials, strava._token, strava._http = saved
+        if saved_arn is None:
+            os.environ.pop("STRAVA_SECRET_ARN", None)
+        else:
+            os.environ["STRAVA_SECRET_ARN"] = saved_arn
+
+
 def main() -> None:
     print("Strava worker")
     for name, fn in sorted(globals().items()):
