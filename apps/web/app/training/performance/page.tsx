@@ -12,7 +12,7 @@ export default async function PerformancePage() {
     <>
       <SectionHeader
         title="Performance"
-        description="Threshold, power curve and training load, from power where there is power and heart rate where there is not."
+        description="Threshold, training load on Garmin’s scale, VO2max and the power curve, from power where there is power and heart rate where there is not."
       />
       <PerformancePanel performance={performance} settings={data.settings} />
     </>

@@ -37,7 +37,7 @@ import urllib.request
 from datetime import datetime, timezone
 from typing import Any
 
-from . import saved_routes
+from . import exercise_load, saved_routes
 from . import streams as stream_math
 
 _STRAVA_API = "https://www.strava.com/api/v3"
@@ -530,7 +530,47 @@ def _streams_key(activity_id: str) -> str:
     return f"{os.getenv('STREAMS_S3_PREFIX', 'streams/')}{activity_id}.json"
 
 
-def _fetch_streams(activity: dict[str, Any], access_token: str) -> dict[str, Any]:
+def _observed_max_hr(activities: list[dict[str, Any]]) -> float | None:
+    """The 99th percentile of activity maxima, as the web app derives it."""
+    maxima = sorted(
+        float(a["max_heartrate"])
+        for a in activities
+        if isinstance(a.get("max_heartrate"), (int, float)) and 0 < a["max_heartrate"] < 230
+    )
+    if not maxima:
+        return None
+    observed = maxima[min(len(maxima) - 1, int(len(maxima) * 0.99))]
+    return observed if observed > 120 else None
+
+
+def _heart_rate_anchors(activities: list[dict[str, Any]] | None = None) -> tuple[float, float]:
+    """
+    Resting and maximum heart rate for exercise load: the owner's athlete
+    settings where set, else the maximum observed across activities, else the
+    fallbacks. The web app applies the same rule to its fallback models, so
+    both sides agree.
+    """
+    settings = _read_json(os.getenv("SETTINGS_S3_KEY", "settings.json"), {})
+    athlete = settings.get("athlete") if isinstance(settings, dict) else None
+    athlete = athlete if isinstance(athlete, dict) else {}
+
+    def bounded(value: Any, low: float, high: float, default: float) -> float:
+        return float(value) if isinstance(value, (int, float)) and low <= value <= high else default
+
+    fallback_max = _observed_max_hr(activities or []) or exercise_load.DEFAULT_MAX_HR
+    rest = bounded(athlete.get("restingHr"), 25, 110, exercise_load.DEFAULT_REST_HR)
+    maximum = bounded(athlete.get("maxHr"), 120, 230, fallback_max)
+    return (rest, maximum) if maximum > rest else (exercise_load.DEFAULT_REST_HR, fallback_max)
+
+
+_NO_LOAD = {"exercise_load": None, "exercise_load_model": exercise_load.MODEL_VERSION, "vo2_power": None}
+
+
+def _fetch_streams(
+    activity: dict[str, Any],
+    access_token: str,
+    anchors: tuple[float, float] = (exercise_load.DEFAULT_REST_HR, exercise_load.DEFAULT_MAX_HR),
+) -> dict[str, Any]:
     """Fetch, store, and summarize one activity's streams; return its index entry."""
     activity_id = str(activity["id"])
     entry: dict[str, Any] = {
@@ -548,12 +588,15 @@ def _fetch_streams(activity: dict[str, Any], access_token: str) -> dict[str, Any
     except StravaHTTPError as error:
         if error.status != 404:
             raise
-        return {**entry, **{key: None for key in empty_summary}, "power_bests": {}}
+        return {**entry, **{key: None for key in empty_summary}, "power_bests": {}, **_NO_LOAD}
 
     data = stream_math.by_type(payload)
     if not data.get("time"):
-        return {**entry, **{key: None for key in empty_summary}, "power_bests": {}}
+        return {**entry, **{key: None for key in empty_summary}, "power_bests": {}, **_NO_LOAD}
     summary = stream_math.summarize(data)
+    # Full-resolution streams exist only here, so Garmin-style load and the
+    # VO2max signal are computed now and kept on the index entry.
+    load = exercise_load.analyse(data, *anchors)
     _write_json(
         _streams_key(activity_id),
         {
@@ -564,7 +607,36 @@ def _fetch_streams(activity: dict[str, Any], access_token: str) -> dict[str, Any
             "summary": summary,
         },
     )
-    return {**entry, "has_streams": True, **summary}
+    return {**entry, "has_streams": True, **summary, **load}
+
+
+def _score_stored_streams(
+    index: dict[str, Any],
+    anchors: tuple[float, float],
+    deadline: float,
+    limit: int,
+) -> int:
+    """
+    Give exercise load to index entries stored before the load model existed.
+
+    Only the downsampled samples were kept for those, which the model handles
+    within 1% of full resolution; VO2max needs 1 Hz power and stays empty.
+    """
+    scored = 0
+    for activity_id, entry in index.items():
+        if scored >= limit or time.monotonic() > deadline:
+            break
+        if not entry.get("has_streams") or entry.get("exercise_load_model") == exercise_load.MODEL_VERSION:
+            continue
+        stored = _read_json(_streams_key(activity_id), None)
+        samples = stored.get("samples", {}) if isinstance(stored, dict) else {}
+        entry["exercise_load"] = exercise_load.epoc_load(
+            samples.get("time") or [], samples.get("heartrate") or [], *anchors
+        )
+        entry["exercise_load_model"] = exercise_load.MODEL_VERSION
+        entry.setdefault("vo2_power", None)
+        scored += 1
+    return scored
 
 
 def _fetch_streams_for(
@@ -574,6 +646,7 @@ def _fetch_streams_for(
     deadline: float,
     limit: int,
     discretionary: bool = False,
+    anchors: tuple[float, float] = (exercise_load.DEFAULT_REST_HR, exercise_load.DEFAULT_MAX_HR),
 ) -> int:
     """Fetch streams in order until the limit, the deadline, or Strava's quota."""
     fetched = 0
@@ -584,7 +657,7 @@ def _fetch_streams_for(
             print(f"[streams] backfill paused at {fetched}, quota at {quota()}")
             break
         try:
-            index[str(activity["id"])] = _fetch_streams(activity, access_token)
+            index[str(activity["id"])] = _fetch_streams(activity, access_token, anchors)
         except StravaHTTPError as error:
             if error.status == 429:
                 print("[streams] Strava rate limit reached; remaining streams wait for the next backfill")
@@ -826,13 +899,22 @@ def main(event: dict[str, Any], context: Any) -> dict[str, Any]:
         if activity["id"] not in urgent_ids and (backfill or activity["id"] in wanted)
     ]
     streams_fetched = 0
-    if urgent:
-        streams_fetched += _fetch_streams_for(urgent, access_token, index, deadline, len(urgent))
-    if optional:
-        streams_fetched += _fetch_streams_for(
-            optional, access_token, index, deadline, backfill_limit, discretionary=True
-        )
-    if streams_fetched or index_changed:
+    stored_scored = 0
+    if urgent or optional or backfill:
+        anchors = _heart_rate_anchors(activities)
+        if urgent:
+            streams_fetched += _fetch_streams_for(
+                urgent, access_token, index, deadline, len(urgent), anchors=anchors
+            )
+        if optional:
+            streams_fetched += _fetch_streams_for(
+                optional, access_token, index, deadline, backfill_limit, discretionary=True, anchors=anchors
+            )
+        if backfill:
+            stored_scored = _score_stored_streams(
+                index, anchors, deadline, int(os.getenv("STREAMS_LOAD_SCORE_LIMIT", "100"))
+            )
+    if streams_fetched or index_changed or stored_scored:
         _write_json(index_key, index)
 
     route_profiles_fetched = _sync_saved_routes(access_token, deadline) if reconciled or routes_sync else 0

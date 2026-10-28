@@ -9,6 +9,7 @@ import type { CurvePoint, PerformanceSummary } from "@/lib/training/metrics/perf
 import type { Settings } from "@/lib/training/settings";
 
 import Chart, { axisText, splitLine, tooltip, useChartPalette } from "./Chart";
+import ExerciseLoadCards from "./ExerciseLoadCards";
 import { useTraining } from "./TrainingProvider";
 
 const WINDOWS = [
@@ -329,6 +330,8 @@ export default function PerformancePanel({
         </article>
       </div>
 
+      <ExerciseLoadCards performance={performance} />
+
       <div className="t-grid t-grid-wide">
         <article className="panel">
           <div className="t-card-head">
@@ -411,9 +414,19 @@ export default function PerformancePanel({
               scored against the FTP you had at the time.
             </li>
             <li>
-              <b>Training load.</b> Rides with power use TSS (an hour at FTP scores 100).
+              <b>Training stress.</b> For fitness, fatigue and form, rides with power use TSS (an hour at FTP scores 100).
               Activities with heart rate, such as pickleball and runs, use Banister TRIMP
               calibrated against your own rides; anything else assumes an easy effort.
+            </li>
+            <li>
+              <b>Garmin-scale load.</b> Garmin’s training load is an EPOC estimate (ml/kg). Each
+              activity gets one on that scale from the best data it has: Garmin’s own number when
+              available; else a model of EPOC building and decaying through second-by-second heart
+              rate; else a model from average and maximum heart rate; else, for rides without heart
+              rate, from power. All three were fitted to your own Garmin numbers since 2024 and
+              checked on the newest fifth (typical error 14, 17 and 17). Acute and chronic load
+              are 7- and 28-day exponentially weighted load per week; the optimal acute range is
+              0.8–1.5 times chronic.
             </li>
             <li>
               <b>Fitness, fatigue, form.</b> 42- and 7-day exponentially weighted averages of daily

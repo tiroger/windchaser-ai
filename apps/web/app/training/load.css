@@ -1,0 +1,127 @@
+/*
+  Garmin-style training load, load focus and VO2max on Performance.
+
+  Same rules as training.css: every selector sits under .training, and every
+  colour is a WindChaser token or a color-mix() of one, so light and dark both
+  resolve through the token set in globals.css. The three focus colours are the
+  data tokens, checked for colour-blind separation in both themes.
+*/
+
+.training .t-load-sources {
+  margin-top: 0.4rem;
+}
+
+.training .t-load-sources b {
+  color: var(--ink-2);
+  font-weight: 600;
+}
+
+.training .t-load-more {
+  margin-top: 0.2rem;
+  color: var(--ink-3);
+  font-size: var(--step--2);
+}
+
+.training .t-load-more summary {
+  cursor: pointer;
+  width: fit-content;
+}
+
+.training .t-load-more summary:hover {
+  color: var(--ink-2);
+}
+
+.training .t-ratio-chip {
+  display: inline-block;
+  padding: 0 0.4rem;
+  border-radius: var(--radius-pill);
+  font-weight: 600;
+}
+
+.training .t-ratio-chip.is-optimal {
+  background: color-mix(in srgb, var(--open) 14%, transparent);
+  color: var(--open);
+}
+
+.training .t-ratio-chip.is-low {
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.training .t-ratio-chip.is-high {
+  background: color-mix(in srgb, var(--warn) 16%, transparent);
+  color: var(--warn);
+}
+
+.training .t-ratio-chip.is-veryHigh {
+  background: color-mix(in srgb, var(--alert) 16%, transparent);
+  color: var(--alert);
+}
+
+/* ---------------------------------------------------------------- focus -- */
+
+.training .t-focus-bar {
+  display: flex;
+  gap: 2px;
+  height: 14px;
+  margin: 0.7rem 0 0.75rem;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--surface-2);
+}
+
+.training .t-focus-bar span {
+  min-width: 3px;
+  flex-basis: 0;
+}
+
+.training .t-focus-bar .is-low,
+.training .t-focus-legend .is-low {
+  background: var(--data-wind);
+}
+
+.training .t-focus-bar .is-high,
+.training .t-focus-legend .is-high {
+  background: var(--data-open);
+}
+
+.training .t-focus-bar .is-anaerobic,
+.training .t-focus-legend .is-anaerobic {
+  background: var(--data-effort);
+}
+
+.training .t-focus-legend {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0 0 0.4rem;
+  padding: 0;
+  list-style: none;
+  font-size: var(--step--1);
+}
+
+.training .t-focus-legend li {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto 3.2em;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.training .t-focus-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.training .t-focus-legend span {
+  color: var(--ink-2);
+}
+
+.training .t-focus-legend strong {
+  font-weight: 500;
+}
+
+.training .t-focus-legend em {
+  color: var(--ink-3);
+  font-style: normal;
+  text-align: right;
+}

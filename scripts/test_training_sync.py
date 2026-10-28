@@ -33,6 +33,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "services"))
 
 from training_sync import handler  # noqa: E402
+from training_sync import exercise_load  # noqa: E402
 from training_sync import streams as stream_math  # noqa: E402
 from training_sync.handler import _to_processed  # noqa: E402
 
@@ -440,6 +441,79 @@ class StreamMathTests(WorkerTestCase):
         self.assertIn("latlng", stream_math.STREAM_KEYS)
 
 
+# ---------------------------------------------------------- exercise load --
+
+
+def _steady(minutes, heartrate, watts=None, start=0):
+    seconds = list(range(start, start + minutes * 60))
+    streams = {"time": seconds, "heartrate": [heartrate] * len(seconds)}
+    if watts is not None:
+        streams["watts"] = [watts] * len(seconds)
+    return streams
+
+
+def _recursion(cells):
+    """The model written out independently: per 5 s cell, accumulate then decay."""
+    params = exercise_load.PARAMS
+    epoc = peak = 0.0
+    minutes = exercise_load.STEP_SECONDS / 60
+    for x in cells:
+        epoc += params["A"] * x ** params["P"] * minutes if x > 0 else 0.0
+        epoc -= epoc * minutes / params["TAU"]
+        peak = max(peak, epoc)
+    return peak
+
+
+class ExerciseLoadTests(unittest.TestCase):
+    def test_steady_effort_matches_the_written_out_model(self):
+        rest, maximum = 49.0, 190.0
+        streams = _steady(60, 140)
+        x = (140 - rest) / (maximum - rest)
+        expected = _recursion([x] * 720)
+        self.assertAlmostEqual(exercise_load.epoc_load(streams["time"], streams["heartrate"], rest, maximum), expected, places=0)
+
+    def test_harder_and_longer_score_more(self):
+        easy = exercise_load.epoc_load(*_steady(60, 125).values())
+        hard = exercise_load.epoc_load(*_steady(60, 160).values())
+        long = exercise_load.epoc_load(*_steady(120, 160).values())
+        self.assertLess(easy, hard)
+        self.assertLess(hard, long)
+
+    def test_resting_heart_rate_scores_nothing_and_no_heart_rate_is_none(self):
+        self.assertEqual(exercise_load.epoc_load(*_steady(30, 45).values()), 0.0)
+        self.assertIsNone(exercise_load.epoc_load(list(range(600)), []))
+        self.assertIsNone(exercise_load.epoc_load(list(range(10)), [150] * 10))
+
+    def test_a_pause_lets_epoc_decay_and_the_peak_is_kept(self):
+        first = _steady(40, 165)
+        second = _steady(40, 165, start=40 * 60 + 3600)
+        joined = exercise_load.epoc_load(first["time"] + second["time"], first["heartrate"] + second["heartrate"])
+        continuous = exercise_load.epoc_load(*_steady(80, 165).values())
+        alone = exercise_load.epoc_load(*first.values())
+        self.assertGreater(joined, alone)
+        self.assertLess(joined, continuous)
+
+    def test_downsampled_samples_score_like_full_resolution(self):
+        heartrate = [120 + 40 * ((second // 300) % 2) for second in range(7200)]
+        full = exercise_load.epoc_load(list(range(7200)), heartrate)
+        picked = list(range(0, 7200, 6))
+        sampled = exercise_load.epoc_load(picked, [heartrate[i] for i in picked])
+        self.assertAlmostEqual(sampled, full, delta=full * 0.02)
+
+    def test_vo2_power_extrapolates_steady_riding_to_max_heart_rate(self):
+        streams = _steady(30, 140, watts=200)
+        result = exercise_load.vo2_power(streams["time"], streams["watts"], streams["heartrate"], 49, 190)
+        slope = exercise_load.VO2_PARAMS["SLOPE"]
+        self.assertAlmostEqual(result["watts"], 200 + (190 - 140) / slope, places=0)
+        self.assertGreaterEqual(result["segments"], 2)
+
+    def test_vo2_power_needs_steady_riding(self):
+        surges = [100 + 250 * ((second // 20) % 2) for second in range(1800)]
+        self.assertIsNone(exercise_load.vo2_power(list(range(1800)), surges, [150] * 1800))
+        easy = _steady(30, 90, watts=120)
+        self.assertIsNone(exercise_load.vo2_power(easy["time"], easy["watts"], easy["heartrate"]))
+
+
 class FakeStore:
     """In-memory stand-in for the data bucket."""
 
@@ -600,6 +674,32 @@ class StreamsSyncTests(WorkerTestCase):
         self.assertEqual(result["streams_fetched"], 2)
         self.assertEqual(set(store.objects["streams-index.json"]), {"3", "4", "5"})
         self.assertEqual(store.objects["streams/4.json"]["summary"]["power_bests"], {"1": 300})
+
+    def test_fetched_streams_carry_exercise_load_with_the_owners_heart_rate(self):
+        store = FakeStore({
+            "activities.json": [_stored("1", "2025-01-01T08:00:00Z")],
+            "settings.json": {"goals": {}, "athlete": {"restingHr": 45, "maxHr": 185}},
+        })
+        ride = _steady(60, 150, watts=220)
+        payload = {key: {"data": value} for key, value in ride.items()}
+        self._run(store, {"source": "streams-backfill"}, lambda *_: payload)
+        entry = store.objects["streams-index.json"]["1"]
+        self.assertEqual(entry["exercise_load"], exercise_load.epoc_load(ride["time"], ride["heartrate"], 45, 185))
+        self.assertEqual(entry["exercise_load_model"], exercise_load.MODEL_VERSION)
+        self.assertIsNotNone(entry["vo2_power"])
+
+    def test_backfill_scores_streams_stored_before_the_load_model(self):
+        ride = _steady(60, 150)
+        store = FakeStore({
+            "activities.json": [_stored("1", "2025-01-01T08:00:00Z")],
+            "streams-index.json": {"1": {"has_streams": True}, "2": {"has_streams": False}},
+            "streams/1.json": {"id": "1", "samples": stream_math.samples(ride)},
+        })
+        self._run(store, {"source": "streams-backfill"}, lambda *_: self.fail("nothing to fetch"))
+        index = store.objects["streams-index.json"]
+        expected = exercise_load.epoc_load(ride["time"], ride["heartrate"])
+        self.assertAlmostEqual(index["1"]["exercise_load"], expected, delta=expected * 0.02)
+        self.assertNotIn("exercise_load", index["2"])
 
     def test_backfill_stops_at_the_rate_limit_and_keeps_progress(self):
         store = FakeStore({"activities.json": [_stored(str(i), f"2025-01-0{i}T08:00:00Z") for i in range(1, 4)]})

@@ -54,6 +54,7 @@ export default async function ActivityPage({ params }: { params: Params }) {
     heartRate: performance.heartRate,
     weightKg: performance.weightKg,
     loads: performance.loads[id] ? { [id]: performance.loads[id] } : {},
+    exerciseLoad: performance.exercise.loads[id] ?? null,
   };
   return (
     <ActivityDetail

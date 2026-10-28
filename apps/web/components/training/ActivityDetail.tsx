@@ -16,6 +16,7 @@ import {
 } from "@/lib/training/activity-types";
 import { alpha } from "@/lib/training/color";
 import type { LoopDetail } from "@/lib/training/loops";
+import { FOCUS_LABELS, SOURCE_SHORT, type ExerciseLoad } from "@/lib/training/metrics/load";
 import {
   ftpOn,
   HEART_RATE_ZONES,
@@ -45,7 +46,10 @@ export type ActivityDetailData = { polyline: string | null; stream: ActivityStre
 export type ActivityPerformance = Pick<
   PerformanceSummary,
   "ftp" | "ftpHistory" | "heartRate" | "weightKg" | "loads"
->;
+> & {
+  /** Garmin-scale load for this activity; absent where the payload predates it. */
+  exerciseLoad?: ExerciseLoad | null;
+};
 
 const PEAK_DURATIONS: Array<[number, string]> = [
   [5, "5 sec"],
@@ -132,7 +136,14 @@ export default function ActivityDetail({
       `${formatNumber(activity.kilojoules)} kJ ≈ ${formatNumber(activity.kilojoules)} kcal`,
     ]);
   }
-  if (load) stats.push(["Training load", `${Math.round(load.tss)} (${load.source})`]);
+  const exercise = performance?.exerciseLoad;
+  if (exercise) {
+    stats.push([
+      exercise.source === "garmin" ? "Garmin load" : `Garmin-scale load · est. from ${SOURCE_SHORT[exercise.source]}`,
+      `${Math.round(exercise.load)} · ${FOCUS_LABELS[exercise.focus].toLowerCase()}`,
+    ]);
+  }
+  if (load) stats.push(["Training stress", `${Math.round(load.tss)} (${load.source})`]);
   if (activity.suffer_score) stats.push(["Relative Effort", formatNumber(activity.suffer_score)]);
   stats.push(["Kudos", formatNumber(activity.kudos_count)]);
 
