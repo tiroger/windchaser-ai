@@ -115,7 +115,10 @@ describe("POST /api/training/ask", () => {
   it("streams the answer as server-sent events", async () => {
     providers.list = [
       provider([
-        reply([{ type: "tool_use", id: "t1", name: "totals", input: { period: "month", year: 2026, month: 10 } }], "tool_use"),
+        reply(
+          [{ type: "tool_use", id: "t1", name: "totals", input: { period: "month", year: 2026, month: 10 } } as Anthropic.ContentBlock],
+          "tool_use",
+        ),
         reply([{ type: "text", text: "You rode 100 miles.", citations: null }], "end_turn"),
       ]),
     ];
