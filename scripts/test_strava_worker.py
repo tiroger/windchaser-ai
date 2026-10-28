@@ -409,6 +409,103 @@ def test_token_refresh_reads_the_shared_secret_fresh() -> None:
             os.environ["STRAVA_SECRET_ARN"] = saved_arn
 
 
+def test_ingest_unwraps_the_webhook_envelope() -> None:
+    import json
+
+    store = history()
+    saved: list[dict] = []
+    load, save = handler.store.load, handler.store.save
+    handler.store.load = lambda key: store
+    handler.store.save = lambda key, payload: saved.append(payload)
+    original = with_activity({"segment_efforts": [effort(1, 1001, "2026-10-01T12:00:00Z")]})
+    try:
+        # Exactly what the webhook route enqueues. Reading the envelope as the
+        # event dropped every ride from August to October without a log line.
+        body = {
+            "received_at": "2026-10-01T13:00:00Z",
+            "event": {"object_type": "activity", "object_id": 55, "aspect_type": "create"},
+        }
+        result = handler.ingest({"Records": [{"body": json.dumps(body)}]})
+    finally:
+        handler.activity = original
+        handler.store.load, handler.store.save = load, save
+
+    assert result["efforts_changed"] == 1, result
+    assert saved and saved[-1]["efforts"][0]["activity_id"] == 55
+
+
+def test_ingest_skips_messages_that_are_not_events() -> None:
+    import json
+
+    store = history()
+    load, save = handler.store.load, handler.store.save
+    handler.store.load = lambda key: store
+    handler.store.save = lambda key, payload: None
+    try:
+        result = handler.ingest({"Records": [{"body": json.dumps({"received_at": "x"})}]})
+    finally:
+        handler.store.load, handler.store.save = load, save
+    assert result["efforts_changed"] == 0, result
+
+
+def test_resync_recovers_missed_efforts_oldest_segment_first() -> None:
+    store = history()
+    store["segments"]["1002"] = {
+        "id": 1002, "name": "Synced recently", "cell_id": "41.00,-73.90",
+        "efforts_synced_at": "2026-10-27T00:00:00Z",
+    }
+    # Held from the offline history, which recorded no activity.
+    store["efforts"] = [{"effort_id": 1, "segment_id": 1001, "activity_id": None}]
+    fetched = {
+        1001: [
+            {"id": 1, "start_date": "2025-06-01T12:00:00Z", "elapsed_time": 600, "activity": {"id": 70}},
+            {"id": 2, "start_date": "2026-10-17T12:00:00Z", "elapsed_time": 590, "activity": {"id": 71}},
+        ],
+    }
+    asked: list[int] = []
+
+    def fake(segment_id: int, **kw) -> list[dict]:
+        asked.append(segment_id)
+        return fetched.get(segment_id, [])
+
+    all_efforts = strava.all_efforts
+    strava.all_efforts = fake
+    try:
+        synced, added = handler.resync_segments(store, limit=1)
+    finally:
+        strava.all_efforts = all_efforts
+
+    assert asked == [1001], f"never-synced segment first, one per limit: {asked}"
+    assert (synced, added) == (1, 1), (synced, added)
+    assert store["efforts"][0]["activity_id"] == 70, "held effort gains its activity"
+    assert store["efforts"][1]["activity_id"] == 71 and store["efforts"][1]["weather"] is None
+    assert store["segments"]["1001"]["efforts_synced_at"], "progress is recorded"
+
+
+def test_resync_progress_is_saved_even_when_nothing_is_new() -> None:
+    store = history()
+    saved: list[dict] = []
+    load, save, save_cal = handler.store.load, handler.store.save, handler.store.save_calibration
+    all_efforts, profile = strava.all_efforts, strava.altitude_profile
+    handler.store.load = lambda key: store if key == handler.EFFORTS_KEY else {"segments": []}
+    handler.store.save = lambda key, payload: saved.append(payload)
+    handler.store.save_calibration = lambda key, payload: None
+    strava.all_efforts = lambda sid, **kw: []
+    strava.altitude_profile = lambda sid: None
+    attach, build = handler.attach_weather, handler.build_calibration
+    handler.attach_weather = lambda payload: 0
+    handler.build_calibration = lambda payload: {"segments": {}, "rider": {}}
+    try:
+        result = handler.refresh()
+    finally:
+        handler.store.load, handler.store.save, handler.store.save_calibration = load, save, save_cal
+        strava.all_efforts, strava.altitude_profile = all_efforts, profile
+        handler.attach_weather, handler.build_calibration = attach, build
+
+    assert result["segments_resynced"] == 1, result
+    assert saved and saved[-1]["segments"]["1001"].get("efforts_synced_at"), "otherwise it re-reads the same segments forever"
+
+
 def main() -> None:
     print("Strava worker")
     for name, fn in sorted(globals().items()):

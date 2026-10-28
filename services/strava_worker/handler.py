@@ -41,6 +41,8 @@ CELL_DEG = 0.1
 # error purely to gradient varying along a segment instead of being one average.
 # Every displayed segment benefits, whether or not the rider has ever ridden it.
 MAX_PROFILES_PER_RUN = int(os.environ.get("MAX_PROFILES_PER_RUN", "25"))
+# Tracked segments whose full history is re-read per refresh, one call each.
+MAX_RESYNC_PER_RUN = int(os.environ.get("MAX_RESYNC_PER_RUN", "25"))
 
 
 def cell_id(lat: float, lon: float) -> str:
@@ -242,16 +244,40 @@ def backfill_segment(payload: dict, segment: dict) -> int:
     }
 
     cell = payload["segments"][str(segment_id)]["cell_id"]
-    seen = {e.get("effort_id") for e in payload["efforts"]}
+    added = _merge_history(payload, segment_id, cell, usable)
+    payload["segments"][str(segment_id)]["efforts_synced_at"] = _now()
+
+    print(
+        f"[backfill] {segment.get('name')}: {added} efforts, "
+        f"profile {'yes' if profile else 'no'}"
+    )
+    return added
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _merge_history(payload: dict, segment_id: int, cell: str | None, efforts: list[dict]) -> int:
+    """Add fetched efforts not yet held. Returns how many were added.
+
+    Efforts already held but stored without their activity -- the offline
+    history recorded none -- gain it, because a fetched effort names its ride.
+    """
+    held = {e.get("effort_id"): e for e in payload["efforts"]}
     added = 0
-    for effort in usable:
-        if effort.get("id") in seen:
+    for effort in efforts:
+        activity_id = (effort.get("activity") or {}).get("id")
+        existing = held.get(effort.get("id"))
+        if existing is not None:
+            if activity_id and not existing.get("activity_id"):
+                existing["activity_id"] = activity_id
             continue
         payload["efforts"].append(
             {
                 "segment_id": segment_id,
                 "effort_id": effort.get("id"),
-                "activity_id": (effort.get("activity") or {}).get("id"),
+                "activity_id": activity_id,
                 "start_date": effort["start_date"],
                 "elapsed_time_s": effort["elapsed_time"],
                 "moving_time_s": effort.get("moving_time"),
@@ -264,12 +290,39 @@ def backfill_segment(payload: dict, segment: dict) -> int:
             }
         )
         added += 1
-
-    print(
-        f"[backfill] {segment.get('name')}: {added} efforts, "
-        f"profile {'yes' if profile else 'no'}"
-    )
     return added
+
+
+def resync_segments(payload: dict, limit: int) -> tuple[int, int]:
+    """Re-read the effort history of the tracked segments synced longest ago.
+
+    Ingestion only sees rides the webhook delivers. Anything it missed -- an
+    outage, a rejected message, the envelope bug that dropped every ride from
+    August to October -- would otherwise be missing for good. One call per
+    segment, taken a few at a time, keeps every tracked segment complete.
+    Returns (segments re-read, efforts added). A re-read that adds nothing
+    still has to be saved, or the same segments come round every run.
+    """
+    segments = list((payload.get("segments") or {}).values())
+    segments.sort(key=lambda s: s.get("efforts_synced_at") or "")
+    synced = added = 0
+    for segment in segments[:limit]:
+        if not strava.discretionary_allowed():
+            print(f"[resync] stopping, quota at {strava.quota()}")
+            break
+        segment_id = int(segment["id"])
+        try:
+            efforts = strava.all_efforts(segment_id)
+        except (RateLimited, Unavailable) as exc:
+            print(f"[resync] {segment.get('name')}: {exc}")
+            break
+        usable = [e for e in efforts if e.get("elapsed_time") and e.get("start_date")]
+        added += _merge_history(payload, segment_id, segment.get("cell_id"), usable)
+        segment["efforts_synced_at"] = _now()
+        synced += 1
+    if synced:
+        print(f"[resync] re-read {synced} segments, recovered {added} efforts")
+    return synced, added
 
 
 def ingest(event, _context=None):
@@ -286,6 +339,14 @@ def ingest(event, _context=None):
             # queue five more times before the dead letter queue; dropping them
             # with a log says the same thing sooner.
             print(f"[ingest] discarding unparseable message: {record.get('body')!r}")
+            continue
+        # The webhook wraps each Strava event as {"received_at", "event"}.
+        # Reading the envelope as the event drops every ride without a word,
+        # which is how this went unnoticed from August to October.
+        if isinstance(body, dict) and isinstance(body.get("event"), dict):
+            body = body["event"]
+        if not isinstance(body, dict) or "object_type" not in body:
+            print(f"[ingest] ignoring a message that is not a Strava event: {record.get('body')!r}")
             continue
         changed += apply_event(body, payload)
 
@@ -350,6 +411,7 @@ def refresh(_event=None, _context=None):
     # segments the rider did ask for.
     backfilled = 0
     profiles = 0
+    resynced = recovered = 0
     try:
         if strava.discretionary_allowed():
             bundle = store.load(BUNDLE_KEY)
@@ -360,6 +422,7 @@ def refresh(_event=None, _context=None):
             candidate = backfill_candidate(payload, bundle)
             if candidate and strava.discretionary_allowed():
                 backfilled = backfill_segment(payload, candidate)
+            resynced, recovered = resync_segments(payload, MAX_RESYNC_PER_RUN)
         else:
             print(f"[backfill] skipped, quota at {strava.quota()}")
     except (RateLimited, Unavailable) as exc:
@@ -369,10 +432,10 @@ def refresh(_event=None, _context=None):
 
     attached = attach_weather(payload)
 
-    if attached or backfilled or profiles:
-        payload["generated_at"] = datetime.now(timezone.utc).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
+    if attached or backfilled or profiles or resynced:
+        payload["effort_count"] = len(payload["efforts"])
+        payload["segment_count"] = len(payload["segments"])
+        payload["generated_at"] = _now()
         store.save(EFFORTS_KEY, payload)
 
     # Rebuilt every run, not only when weather arrived. It is seconds of work
@@ -395,6 +458,8 @@ def refresh(_event=None, _context=None):
         "profiles_added": profiles,
         "segments_backfilled": 1 if backfilled else 0,
         "efforts_backfilled": backfilled,
+        "segments_resynced": resynced,
+        "efforts_recovered": recovered,
         "segments": len(calibration["segments"]),
         "with_fitted_power": fitted,
         "efforts": len(payload["efforts"]),

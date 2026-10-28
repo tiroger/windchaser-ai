@@ -130,9 +130,8 @@ resource "aws_cloudwatch_event_target" "reconciliation" {
 }
 
 # Detailed streams cost one Strava read per activity, so history fills in a
-# batch at a time. The batch is smaller than my-strava's 50 because the read
-# allowance is now shared with strava_worker, and the worker stops early anyway
-# once the day's usage passes 80%.
+# batch at a time. The read allowance is shared with strava_worker, and the
+# worker stops early once the day's usage passes 80%.
 resource "aws_cloudwatch_event_rule" "streams_backfill" {
   name                = "${local.worker_name}-streams-backfill"
   description         = "Fetch detailed streams for Training activities that lack them."
