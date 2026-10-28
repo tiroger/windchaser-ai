@@ -130,3 +130,75 @@ variable "domain_name" {
   type        = string
   default     = null
 }
+
+variable "training_events_queue_url" {
+  description = <<-EOT
+    FIFO queue the webhook forwards the rider's activity events to, for the
+    Training section's sync (modules/training-sync). Null skips forwarding and
+    leaves the existing ingestion path exactly as it was.
+  EOT
+  type        = string
+  default     = null
+}
+
+variable "strava_athlete_id" {
+  description = <<-EOT
+    The rider whose activities the Training section shows. The webhook forwards
+    only this athlete's events, and owner mode is for this athlete alone. Public
+    on their Strava profile, so not a secret. Null forwards nothing.
+  EOT
+  type        = string
+  default     = null
+}
+
+# Object layout for the Training section. The training-sync module takes the
+# same names from the training_s3_keys output rather than its own defaults, so
+# the writer and the reader cannot drift apart.
+
+variable "activities_s3_key" {
+  description = "Object holding the synced activities."
+  type        = string
+  default     = "activities.json"
+}
+
+variable "bikes_s3_key" {
+  description = "Object holding the synced bikes and shoes."
+  type        = string
+  default     = "bikes.json"
+}
+
+variable "streams_s3_prefix" {
+  description = "Prefix under which each activity's detailed streams are stored."
+  type        = string
+  default     = "streams/"
+}
+
+variable "streams_index_s3_key" {
+  description = "Object summarising which activities have streams."
+  type        = string
+  default     = "streams-index.json"
+}
+
+variable "saved_routes_s3_key" {
+  description = "Object listing the athlete's public saved routes."
+  type        = string
+  default     = "saved-routes.json"
+}
+
+variable "saved_routes_s3_prefix" {
+  description = "Prefix under which each saved route's elevation profile is stored."
+  type        = string
+  default     = "saved-routes/"
+}
+
+variable "maintenance_s3_key" {
+  description = "Object holding the owner's maintenance log. One of the two keys the runtime may write."
+  type        = string
+  default     = "maintenance.json"
+}
+
+variable "settings_s3_key" {
+  description = "Object holding the owner's goals and athlete settings. The other key the runtime may write."
+  type        = string
+  default     = "settings.json"
+}

@@ -27,7 +27,10 @@ applications:
             # server route see them at request time.
             # The || true matters: grep exits non-zero when nothing matches, and
             # a missing optional variable must not fail the build.
-            - env | grep -E '^(STRAVA_SECRET_ARN|LIVE_AI_ENABLED|APP_DATA_BUCKET|CALIBRATION_S3_KEY|BUNDLE_S3_KEY|WINDCHASER_BRIEFING_MODEL|STRAVA_EVENTS_QUEUE_URL|STRAVA_SUBSCRIPTION_ID)=' >> .env.production || true
+            # The second half of the list is the Training section's (ADR-0004);
+            # docs/architecture/TRAINING_INTEGRATION.md is the authority on it.
+            # Names and ARNs only: secret values stay in Secrets Manager.
+            - env | grep -E '^(STRAVA_SECRET_ARN|LIVE_AI_ENABLED|APP_DATA_BUCKET|CALIBRATION_S3_KEY|BUNDLE_S3_KEY|WINDCHASER_BRIEFING_MODEL|STRAVA_EVENTS_QUEUE_URL|STRAVA_SUBSCRIPTION_ID|ACTIVITIES_S3_KEY|BIKES_S3_KEY|STREAMS_S3_PREFIX|STREAMS_INDEX_S3_KEY|SAVED_ROUTES_S3_KEY|SAVED_ROUTES_S3_PREFIX|MAINTENANCE_S3_KEY|SETTINGS_S3_KEY|WEB_SECRET_ARN|TRAINING_EVENTS_QUEUE_URL|STRAVA_ATHLETE_ID)=' >> .env.production || true
             # prebuild syncs the MapLibre worker into public/, without which the
             # map renders an empty canvas.
             - npm run build

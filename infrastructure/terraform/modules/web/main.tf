@@ -9,7 +9,7 @@
 # invisible to it -- which is how a correctly configured secret ARN still
 # produced "no credentials" at runtime.
 locals {
-  runtime_environment = {
+  all_runtime_environment = {
     STRAVA_SECRET_ARN         = aws_secretsmanager_secret.strava.arn
     LIVE_AI_ENABLED           = var.enable_bedrock ? "true" : "false"
     WINDCHASER_BRIEFING_MODEL = var.briefing_model
@@ -18,6 +18,32 @@ locals {
     BUNDLE_S3_KEY             = "opportunities.json"
     STRAVA_EVENTS_QUEUE_URL   = var.strava_events_queue_url == null ? "" : var.strava_events_queue_url
     STRAVA_SUBSCRIPTION_ID    = var.strava_subscription_id == null ? "" : var.strava_subscription_id
+
+    # The Training section (ADR-0004). Key names rather than paths hard-coded
+    # in the application, so the worker and the web runtime are configured from
+    # one place; see the training_s3_keys output and TRAINING_INTEGRATION.md.
+    ACTIVITIES_S3_KEY         = var.activities_s3_key
+    BIKES_S3_KEY              = var.bikes_s3_key
+    STREAMS_S3_PREFIX         = var.streams_s3_prefix
+    STREAMS_INDEX_S3_KEY      = var.streams_index_s3_key
+    SAVED_ROUTES_S3_KEY       = var.saved_routes_s3_key
+    SAVED_ROUTES_S3_PREFIX    = var.saved_routes_s3_prefix
+    MAINTENANCE_S3_KEY        = var.maintenance_s3_key
+    SETTINGS_S3_KEY           = var.settings_s3_key
+    WEB_SECRET_ARN            = aws_secretsmanager_secret.web.arn
+    TRAINING_EVENTS_QUEUE_URL = var.training_events_queue_url == null ? "" : var.training_events_queue_url
+    STRAVA_ATHLETE_ID         = var.strava_athlete_id == null ? "" : var.strava_athlete_id
+  }
+
+  # Amplify stores no variable whose value is empty, so declaring one shows as
+  # a change on every plan -- Terraform adds it, Amplify drops it -- and the
+  # drift check fails on a difference no apply can settle. Leaving it out is
+  # equivalent for the application, which reads an absent variable and an
+  # empty one the same way. Dev sets every optional value today, so this
+  # changes nothing there; it is what keeps prod's first apply, and any value
+  # later unset, from drifting.
+  runtime_environment = {
+    for key, value in local.all_runtime_environment : key => value if value != ""
   }
 }
 

@@ -19,6 +19,11 @@ locals {
   # Google and Cloudflare, because this network intercepts port 53 and answers
   # every query from its own cache regardless of the server asked.
   domain_delegated = true
+
+  # The rider the Training section belongs to (ADR-0004). Public: it is the
+  # number in their Strava profile URL. The webhook forwards only this
+  # athlete's events and the worker stores only this athlete's activities.
+  strava_athlete_id = "644338"
 }
 
 module "observability" {
@@ -76,6 +81,12 @@ module "web" {
   # Strava permits one subscription per application, so this is the only one.
   strava_subscription_id = "367414"
 
+  # The Training sync's queue. The webhook forwards this athlete's activity
+  # events there as well as to strava_ingestion, so one Strava subscription
+  # serves both workers.
+  training_events_queue_url = module.training_sync.queue_url
+  strava_athlete_id         = local.strava_athlete_id
+
   # Null until the registrar delegates to the zone above. The Amplify URL keeps
   # working throughout, so this is additive rather than a cutover.
   domain_name = local.domain_delegated ? module.dns.domain_name : null
@@ -101,6 +112,38 @@ module "strava_ingestion" {
   app_data_bucket     = module.web.app_data_bucket
   app_data_bucket_arn = module.web.app_data_bucket_arn
   log_retention_days  = 14
+}
+
+module "training_sync" {
+  source = "../../modules/training-sync"
+
+  environment = "dev"
+
+  # The web runtime forwards webhook events here, as it enqueues them for
+  # strava_ingestion.
+  consumer_role_name = module.web.compute_role_name
+  alarm_topic_arn    = module.observability.alert_topic_arn
+
+  # The same secret strava_worker and the web runtime use: one Strava
+  # application, one refresh token. The worker writes back only a rotated
+  # STRAVA_REFRESH_TOKEN, re-reading the document first.
+  source_root       = "${path.root}/../../../.."
+  strava_secret_arn = module.web.strava_secret_arn
+  strava_athlete_id = local.strava_athlete_id
+
+  # The same bucket, and the object names the web module tells the runtime to
+  # read, so writer and reader cannot disagree. None of them is a key
+  # strava_worker writes.
+  app_data_bucket        = module.web.app_data_bucket
+  app_data_bucket_arn    = module.web.app_data_bucket_arn
+  activities_s3_key      = module.web.training_s3_keys.activities
+  bikes_s3_key           = module.web.training_s3_keys.bikes
+  streams_s3_prefix      = module.web.training_s3_keys.streams_prefix
+  streams_index_s3_key   = module.web.training_s3_keys.streams_index
+  saved_routes_s3_key    = module.web.training_s3_keys.saved_routes
+  saved_routes_s3_prefix = module.web.training_s3_keys.saved_routes_prefix
+
+  log_retention_days = 14
 }
 
 module "web_firewall" {

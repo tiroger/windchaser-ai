@@ -39,6 +39,26 @@ output "strava_events_queue_url" {
   value       = module.strava_ingestion.queue_url
 }
 
+output "training_events_queue_url" {
+  description = "FIFO queue feeding the Training sync. Send manual syncs with message group strava-events."
+  value       = module.training_sync.queue_url
+}
+
+output "training_sync_function_name" {
+  description = "Worker keeping the Training section's Strava data current."
+  value       = module.training_sync.worker_function_name
+}
+
+output "web_secret_arn" {
+  description = "Owner-mode secret for the Training section; populate it with admin_passphrase and admin_session_secret."
+  value       = module.web.web_secret_arn
+}
+
+output "web_secret_name" {
+  description = "Name to pass to `aws secretsmanager put-secret-value` for the owner-mode secret."
+  value       = module.web.web_secret_name
+}
+
 output "domain_nameservers" {
   description = "Nameservers to set at the registrar. Delegation must resolve before domain_delegated is turned on."
   value       = module.dns.name_servers

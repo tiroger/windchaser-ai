@@ -46,6 +46,7 @@ jobs:
           test -f docs/architecture/AWS_ARCHITECTURE.md
           test -f docs/architecture/COST_STRATEGY.md
           test -f docs/architecture/TERRAFORM_AND_CICD.md
+          test -f docs/architecture/TRAINING_INTEGRATION.md
 
   terraform-quality:
     runs-on: ubuntu-latest
@@ -101,6 +102,9 @@ jobs:
 
       - name: Strava worker behaviour
         run: uv run python scripts/test_strava_worker.py
+
+      - name: Training sync behaviour
+        run: uv run python scripts/test_training_sync.py
 
       - name: Calibration builder behaviour
         run: uv run python scripts/test_calibration.py
