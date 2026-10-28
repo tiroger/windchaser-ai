@@ -4,11 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import BriefingPanel from "@/components/Briefing";
 import GradientProfile from "@/components/GradientProfile";
+import Masthead from "@/components/Masthead";
 import OpportunityRail, { type RankedRow } from "@/components/OpportunityRail";
 import Scrubber from "@/components/Scrubber";
 import SegmentDetail from "@/components/SegmentDetail";
 import SegmentMap from "@/components/SegmentMap";
-import ThemeToggle, { useTheme } from "@/components/ThemeToggle";
+import { useTheme } from "@/components/ThemeToggle";
 import { haversineM } from "@/lib/geo";
 import { evaluate } from "@/lib/physics";
 import type { Briefing } from "@/lib/server/briefing";
@@ -31,7 +32,8 @@ export default function Page() {
     const id = setInterval(() => setNowMs(Date.now()), 60_000);
     return () => clearInterval(id);
   }, []);
-  const [theme, setTheme] = useTheme();
+  // The masthead owns the toggle; this read keeps the map's basemap in step.
+  const [theme] = useTheme();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [briefing, setBriefing] = useState<Briefing | null>(null);
   const [briefingLoading, setBriefingLoading] = useState(false);
@@ -338,26 +340,7 @@ export default function Page() {
 
   return (
     <div className="shell">
-      <header className="masthead">
-        <div className="wordmark">
-          <svg className="mark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path
-              d="M2 8h11.5a3.2 3.2 0 1 0-3.1-4"
-              stroke="currentColor"
-              strokeWidth="1.9"
-              strokeLinecap="round"
-            />
-            <path
-              d="M2 13h15.4a3.4 3.4 0 1 1-3.3 4.3"
-              stroke="currentColor"
-              strokeWidth="1.9"
-              strokeLinecap="round"
-              opacity="0.55"
-            />
-          </svg>
-          <h1>WindChaser</h1>
-        </div>
-
+      <Masthead heading>
         <div className="chip-row" role="group" aria-label="Riding region">
           {bundle.regions
             .filter((r) => r.starred_count > 0 || r.id === "here")
@@ -406,8 +389,7 @@ export default function Page() {
           <span className="dot" />
           Forecast
         </span>
-        <ThemeToggle theme={theme} onChange={setTheme} />
-      </header>
+      </Masthead>
 
       <div className="workspace">
         <aside className="rail">
