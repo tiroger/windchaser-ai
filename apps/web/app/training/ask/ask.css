@@ -158,6 +158,18 @@
   padding-left: 1.25rem;
 }
 
+.training .t-ask-md ul {
+  list-style: disc;
+}
+
+.training .t-ask-md ol {
+  list-style: decimal;
+}
+
+.training .t-ask-md li::marker {
+  color: var(--ink-3);
+}
+
 .training .t-ask-md li + li {
   margin-top: 0.2rem;
 }
@@ -233,18 +245,17 @@
 }
 
 .training .t-ask-trace summary::before {
-  content: "";
-  width: 0.4rem;
-  height: 0.4rem;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  transform: rotate(-45deg);
+  content: "›";
+  display: inline-block;
+  width: 0.6rem;
+  color: var(--ink-3);
+  font-size: var(--step-0);
+  line-height: 1;
   transition: transform 130ms ease;
-  align-self: center;
 }
 
 .training .t-ask-trace[open] summary::before {
-  transform: rotate(45deg);
+  transform: rotate(90deg);
 }
 
 .training .t-ask-trace-meta {
