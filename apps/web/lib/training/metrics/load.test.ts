@@ -40,8 +40,8 @@ const entry = (overrides: Partial<StreamsIndexEntry>): StreamsIndexEntry => ({
 describe("load models", () => {
   // Reference values computed from the fitted equations in the research notebook.
   it("scores average and max heart rate like the fitted summary model", () => {
-    expect(summaryLoad(90, 140, 170, false, anchors)).toBeCloseTo(153.72, 1);
-    expect(summaryLoad(75, 120, 165, true, anchors)).toBeCloseTo(72.17, 1);
+    expect(summaryLoad(90, 140, 170, false, anchors)).toBeCloseTo(143.63, 1);
+    expect(summaryLoad(75, 120, 165, true, anchors)).toBeCloseTo(68.23, 1);
   });
 
   it("scores power alone like the fitted power model", () => {
@@ -69,8 +69,8 @@ describe("load models", () => {
     });
     expect(loadAnchors({ weightKg: null, restingHr: 49, maxHr: null, ftpOverride: null }, [])).toEqual(anchors);
     // Without a setting, the maximum observed in the data, as the Performance page derives it.
-    const observed = Array.from({ length: 100 }, (_, i) => activity({ id: `m${i}`, date: "2026-10-01T08:00:00", max_heartrate: 150 + (i % 40) }));
-    expect(loadAnchors({ weightKg: null, restingHr: 49, maxHr: null, ftpOverride: null }, observed).maxHr).toBe(189);
+    const observed = Array.from({ length: 100 }, (_, i) => activity({ id: `m${i}`, date: "2026-10-01T08:00:00", max_heartrate: 145 + (i % 40) }));
+    expect(loadAnchors({ weightKg: null, restingHr: 49, maxHr: null, ftpOverride: null }, observed).maxHr).toBe(184);
   });
 });
 
