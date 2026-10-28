@@ -6,6 +6,22 @@ import {
   type CalendarDate,
 } from "@/lib/training/activity-types";
 
+import {
+  acuteChronicSeries,
+  exerciseLoads,
+  loadFocus,
+  sourceShares,
+  vo2maxSummary,
+  type ExerciseLoad,
+  type ExerciseLoadSource,
+  type GarminLoads,
+  type HeartRateAnchors,
+  type LoadFocus,
+  type LoadPoint,
+  type Vo2maxSummary,
+} from "./load";
+import { HEART_RATE_ANCHORS } from "./load-params";
+
 // ---------------------------------------------------------------- data --
 
 export type HalfSummary = { watts: number | null; heartrate: number | null };
@@ -27,6 +43,11 @@ export type StreamsIndexEntry = StreamSummary & {
   date: string;
   sport_type: string;
   has_streams: boolean;
+  /** Garmin-scale peak EPOC from second-by-second heart rate; absent on older entries. */
+  exercise_load?: number | null;
+  exercise_load_model?: string;
+  /** Power at maximum heart rate, extrapolated from steady riding. */
+  vo2_power?: { watts: number; segments: number } | null;
 };
 
 export type StreamsIndex = Record<string, StreamsIndexEntry>;
@@ -433,13 +454,71 @@ export type PerformanceSummary = {
   fitness: FitnessPoint[];
   loads: Record<string, ActivityLoad>;
   coverage: { activities: number; withStreams: number; withPower: number };
+  exercise: ExerciseLoadSummary;
+  vo2max: Vo2maxSummary;
 };
+
+/** Garmin-style load: per activity, acute and chronic over time, and the four-week focus. */
+export type ExerciseLoadSummary = {
+  loads: Record<string, ExerciseLoad>;
+  series: LoadPoint[];
+  focus: LoadFocus;
+  /** Where the load in the last four weeks came from. */
+  recentSources: Record<ExerciseLoadSource, { activities: number; load: number }>;
+  /** Where the load in the charted period came from. */
+  seriesSources: Record<ExerciseLoadSource, { activities: number; load: number }>;
+  /** Activities in the charted period with no heart rate or power, so no load. */
+  unscored: number;
+  anchors: HeartRateAnchors;
+};
+
+/** Settings first; otherwise the values the load models were fitted with. */
+export function loadAnchors(settings: AthleteSettings): HeartRateAnchors {
+  const maxHr = settings.maxHr ?? HEART_RATE_ANCHORS.maxHr;
+  const restingHr = settings.restingHr ?? HEART_RATE_ANCHORS.restingHr;
+  return maxHr > restingHr ? { restingHr, maxHr } : HEART_RATE_ANCHORS;
+}
+
+const EXERCISE_SERIES_DAYS = 180;
+
+export function exerciseLoadSummary(
+  activities: Activity[],
+  index: StreamsIndex,
+  settings: AthleteSettings,
+  today: CalendarDate,
+  garmin: GarminLoads = {},
+): ExerciseLoadSummary {
+  const anchors = loadAnchors(settings);
+  const loads = exerciseLoads(activities, index, anchors, garmin);
+  const series = acuteChronicSeries(activities, loads, today).slice(-EXERCISE_SERIES_DAYS);
+  const todayIso = isoDate(today);
+  const fourWeeksAgo = isoDate(calendarFromDay(dayNumber(today) - 27));
+  const seriesFrom = series[0]?.date ?? todayIso;
+  return {
+    loads,
+    series,
+    focus: loadFocus(activities, loads, today),
+    recentSources: sourceShares(activities, loads, fourWeeksAgo, todayIso),
+    seriesSources: sourceShares(activities, loads, seriesFrom, todayIso),
+    unscored: activities.filter((activity) => {
+      const date = activity.date.slice(0, 10);
+      return date >= seriesFrom && date <= todayIso && !loads[activity.id];
+    }).length,
+    anchors,
+  };
+}
 
 export function performanceSummary(
   activities: Activity[],
   index: StreamsIndex,
   settings: AthleteSettings,
   today: CalendarDate,
+  options: {
+    /** Garmin's own loads, once ingested; see GarminLoads. */
+    garmin?: GarminLoads;
+    /** Body mass for VO2max when athlete settings have no weight. */
+    fallbackMassKg?: number | null;
+  } = {},
 ): PerformanceSummary {
   const model = buildPerformanceModel(activities, index, settings, today);
   const entries = powerEntries(index);
@@ -471,5 +550,7 @@ export function performanceSummary(
       withStreams: indexValues.filter((entry) => entry.has_streams).length,
       withPower: entries.length,
     },
+    exercise: exerciseLoadSummary(activities, index, settings, today, options.garmin),
+    vo2max: vo2maxSummary(index, settings.weightKg ?? options.fallbackMassKg ?? null, today),
   };
 }

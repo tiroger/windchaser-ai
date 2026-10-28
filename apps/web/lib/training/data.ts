@@ -8,6 +8,8 @@ import { cache } from "react";
 
 import type { Activity, Gear, MaintenanceRecord } from "@/lib/training/activity-types";
 import { calendarDate, localIsoDate } from "@/lib/training/activity-types";
+import { calibrationTable } from "@/lib/server/calibration";
+import type { GarminLoads } from "@/lib/training/metrics/load";
 import {
   performanceSummary,
   type ActivityStream,
@@ -456,13 +458,32 @@ export const loadTrainingData = cache(async (): Promise<TrainingData> => {
  * as of the server's date. Deduplicated per render like loadTrainingData.
  */
 export const loadPerformance = cache(async (): Promise<PerformanceSummary> => {
-  const [activities, index, settings] = await Promise.all([
+  const [activities, index, settings, garmin, calibration] = await Promise.all([
     loadActivities(),
     loadStreamsIndex(),
     loadSettingsValue(),
+    loadGarminLoads(),
+    calibrationTable(),
   ]);
-  return performanceSummary(activities, index, settings.athlete, calendarDate(localIsoDate())!);
+  return performanceSummary(activities, index, settings.athlete, calendarDate(localIsoDate())!, {
+    garmin,
+    fallbackMassKg: calibration.rider?.mass_kg ?? null,
+  });
 });
+
+/**
+ * Garmin's own per-activity training load, keyed by Strava activity id.
+ *
+ * Reading it needs the Garmin Personal API key in production, which is not
+ * set up, so there is nothing to load yet and every load is an estimate. This
+ * is the seam for that ingestion: a worker that matches Garmin activities to
+ * Strava ones by start time (±3 minutes) and writes their
+ * `activityTrainingLoad` here. Whatever it returns takes precedence over the
+ * estimates, activity by activity.
+ */
+async function loadGarminLoads(): Promise<GarminLoads> {
+  return {};
+}
 
 /** Cheap when nothing changed: cached objects are revalidated with ETags. */
 export async function loadDataVersion(): Promise<string> {
