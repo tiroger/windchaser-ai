@@ -10,8 +10,10 @@ import {
   getActivityKind,
   type Activity,
 } from "@/lib/training/activity-types";
+import type { LoopSummary } from "@/lib/training/loops";
 
 import SportIcon, { sportTone } from "./SportIcon";
+import TopLoops from "./TopLoops";
 
 const RouteMap = dynamic(() => import("./RouteMap"), {
   ssr: false,
@@ -23,7 +25,14 @@ const RouteMap = dynamic(() => import("./RouteMap"), {
  * fetched one route at a time as they are picked, so the page carries a list
  * of names rather than thousands of tracks.
  */
-export default function RouteExplorer({ activities }: { activities: Activity[] }) {
+export default function RouteExplorer({
+  activities,
+  loops = [],
+}: {
+  activities: Activity[];
+  /** The most-ridden loops, shown above the list as a way in. */
+  loops?: LoopSummary[];
+}) {
   const routes = useMemo(() => activities.filter((activity) => activity.hasRoute), [activities]);
   const [selectedId, setSelectedId] = useState(routes[0]?.id ?? "");
   // Polylines by activity ID; null marks a route that is unavailable or hidden.
@@ -59,68 +68,71 @@ export default function RouteExplorer({ activities }: { activities: Activity[] }
 
   const polyline = polylines[selected.id];
   return (
-    <section className="t-grid t-grid-wide">
-      <article className="panel">
-        <div className="t-card-head">
-          <div>
-            <span className="label">GPS route</span>
-            <h2 className="t-card-title">{selected.name}</h2>
+    <>
+      <TopLoops loops={loops} />
+      <section className="t-grid t-grid-wide">
+        <article className="panel">
+          <div className="t-card-head">
+            <div>
+              <span className="label">GPS route</span>
+              <h2 className="t-card-title">{selected.name}</h2>
+            </div>
+            <Link className="t-link" href={`/training/activities/${selected.id}`}>
+              Full analysis →
+            </Link>
           </div>
-          <Link className="t-link" href={`/training/activities/${selected.id}`}>
-            Full analysis →
-          </Link>
-        </div>
-        {polyline ? (
-          <RouteMap routes={[{ id: selected.id, polyline }]} variant="route" height={400} />
-        ) : (
-          <div className="t-map is-loading" style={{ height: 400 }}>
-            {polyline === null
-              ? "This route stays within the hidden area around home."
-              : "Loading route…"}
+          {polyline ? (
+            <RouteMap routes={[{ id: selected.id, polyline }]} variant="route" height={400} />
+          ) : (
+            <div className="t-map is-loading" style={{ height: 400 }}>
+              {polyline === null
+                ? "This route stays within the hidden area around home."
+                : "Loading route…"}
+            </div>
+          )}
+          <div className="t-figures">
+            <span>
+              <strong className="num">{formatNumber(selected.distance, 1)}</strong>
+              <small>miles</small>
+            </span>
+            <span>
+              <strong className="num">{formatNumber(selected.total_elevation_gain)}</strong>
+              <small>ft climbed</small>
+            </span>
+            <span>
+              <strong className="num">{formatNumber(selected.average_speed, 1)}</strong>
+              <small>mph average</small>
+            </span>
           </div>
-        )}
-        <div className="t-figures">
-          <span>
-            <strong className="num">{formatNumber(selected.distance, 1)}</strong>
-            <small>miles</small>
-          </span>
-          <span>
-            <strong className="num">{formatNumber(selected.total_elevation_gain)}</strong>
-            <small>ft climbed</small>
-          </span>
-          <span>
-            <strong className="num">{formatNumber(selected.average_speed, 1)}</strong>
-            <small>mph average</small>
-          </span>
-        </div>
-        <p className="t-note">
-          The first and last 500 m of every route are hidden to keep home private.
-        </p>
-      </article>
-      <article className="panel">
-        <span className="label">Your mapped activities</span>
-        <h2 className="t-card-title">{formatNumber(routes.length)} routes</h2>
-        <div className="t-list t-scroll-list">
-          {routes.map((activity) => (
-            <button
-              className="t-row"
-              aria-pressed={activity.id === selected.id}
-              key={activity.id}
-              onClick={() => setSelectedId(activity.id)}
-              type="button"
-            >
-              <span className={`t-icon-chip is-small ${sportTone(getActivityKind(activity.type))}`}>
-                <SportIcon type={activity.type} />
-              </span>
-              <span className="t-row-text">
-                <strong>{activity.name}</strong>
-                <small>{formatCalendarDate(activity.date)}</small>
-              </span>
-              <span className="t-row-figure num">{formatNumber(activity.distance, 1)} mi</span>
-            </button>
-          ))}
-        </div>
-      </article>
-    </section>
+          <p className="t-note">
+            The first and last 500 m of every route are hidden to keep home private.
+          </p>
+        </article>
+        <article className="panel">
+          <span className="label">Your mapped activities</span>
+          <h2 className="t-card-title">{formatNumber(routes.length)} routes</h2>
+          <div className="t-list t-scroll-list">
+            {routes.map((activity) => (
+              <button
+                className="t-row"
+                aria-pressed={activity.id === selected.id}
+                key={activity.id}
+                onClick={() => setSelectedId(activity.id)}
+                type="button"
+              >
+                <span className={`t-icon-chip is-small ${sportTone(getActivityKind(activity.type))}`}>
+                  <SportIcon type={activity.type} />
+                </span>
+                <span className="t-row-text">
+                  <strong>{activity.name}</strong>
+                  <small>{formatCalendarDate(activity.date)}</small>
+                </span>
+                <span className="t-row-figure num">{formatNumber(activity.distance, 1)} mi</span>
+              </button>
+            ))}
+          </div>
+        </article>
+      </section>
+    </>
   );
 }

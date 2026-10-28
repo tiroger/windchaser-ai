@@ -7,6 +7,7 @@ import { formatCalendarDate, formatHours, formatNumber } from "@/lib/training/ac
 import type { RouteProfile, SavedRoute } from "@/lib/training/metrics/route-profile";
 
 import RouteAnalysis, { TrackStats, type RouteTrack } from "./RouteAnalysis";
+import RoutePlanner from "./RoutePlanner";
 
 const SUB_TYPES: Record<NonNullable<SavedRoute["sub_type"]>, string> = {
   road: "Road",
@@ -152,6 +153,7 @@ function RouteDetail({
         {route.description && <p className="t-note">{route.description}</p>}
         <RouteStats route={route} track={profile ?? undefined} />
       </article>
+      {profile && route.type !== "run" && <RoutePlanner routeId={route.id} profile={profile} />}
       {profile ? (
         <RouteAnalysis track={profile} />
       ) : (

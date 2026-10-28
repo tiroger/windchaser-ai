@@ -1,0 +1,444 @@
+/*
+  Loops and segment history (activity detail and the routes page).
+
+  Same rules as training.css: every selector under .training, colours only
+  from WindChaser tokens or color-mix() of them. "This ride" is the accent
+  everywhere; a compared ride is the wind blue.
+*/
+
+/* ------------------------------------------------------------- badges -- */
+
+.training .t-badge {
+  display: inline-block;
+  margin-left: 0.45rem;
+  padding: 0.05rem 0.42rem;
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--step--2);
+  font-weight: 540;
+  line-height: 1.5;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+
+.training .t-badge.is-pr {
+  background: var(--accent);
+  color: var(--ground);
+}
+
+.training .t-badge.is-rank-2,
+.training .t-badge.is-rank-3 {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+
+/* --------------------------------------------------------------- loop -- */
+
+.training .t-loop-sub {
+  margin-top: 0.15rem;
+  color: var(--ink-3);
+  font-size: var(--step--1);
+}
+
+.training .t-loop-sub b {
+  color: var(--ink);
+  font-weight: 540;
+}
+
+.training .t-loop-legend {
+  margin-top: 0.25rem;
+}
+
+.training .t-loop-legend a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 3px;
+}
+
+.training .t-loop-legend a:hover {
+  color: var(--accent);
+}
+
+.training .t-loop-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--ink-3);
+}
+
+.training .t-loop-dot.is-current {
+  width: 11px;
+  height: 11px;
+  background: var(--accent);
+}
+
+.training .t-loop-line {
+  display: inline-block;
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+.training .t-loop-line.is-current {
+  background: var(--accent);
+}
+
+.training .t-loop-line.is-other {
+  background: var(--data-wind);
+}
+
+.training .t-loop-table {
+  margin-top: 0.75rem;
+}
+
+.training .t-loop-table th:first-child,
+.training .t-loop-table td:first-child {
+  width: 2.2rem;
+  padding-right: 0.8rem;
+}
+
+.training .t-loop-table tr.is-current td {
+  background: var(--accent-wash);
+  color: var(--ink);
+}
+
+.training .t-loop-date {
+  color: var(--ink);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.training a.t-loop-date:hover {
+  color: var(--accent);
+}
+
+.training .t-loop-action {
+  width: 1%;
+  text-align: right;
+}
+
+.training .t-loop-compare {
+  padding: 0.18rem 0.6rem;
+  border-radius: var(--radius-pill);
+  color: var(--ink-3);
+  font-size: var(--step--2);
+  font-weight: 500;
+  box-shadow: inset 0 0 0 1px var(--line);
+  transition:
+    color 120ms ease,
+    background 120ms ease;
+}
+
+.training .t-loop-compare:hover {
+  color: var(--ink);
+  background: var(--surface-2);
+}
+
+.training .t-loop-compare[aria-pressed="true"] {
+  color: var(--data-wind);
+  background: color-mix(in srgb, var(--data-wind) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--data-wind) 35%, transparent);
+}
+
+.training .t-loop-compare-panel {
+  margin-top: 1.1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line-soft);
+  scroll-margin-top: 1rem;
+}
+
+.training .t-loop-compare-panel .t-subhead {
+  display: block;
+  margin: 0 0 0.25rem;
+}
+
+.training .t-loop-delta td:first-child {
+  color: var(--ink);
+}
+
+.training .t-loop-diff {
+  color: var(--ink);
+}
+
+.training .t-loop-overlays {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 0.6rem 1.2rem;
+  margin-top: 0.9rem;
+}
+
+.training .t-loop-overlays .t-subhead {
+  margin: 0;
+}
+
+.training .t-loop-overlays .t-subhead small {
+  color: var(--ink-3);
+  font-weight: 400;
+}
+
+/* ----------------------------------------------------------- segments -- */
+
+.training .t-seg-list {
+  margin-top: 0.4rem;
+  list-style: none;
+}
+
+.training .t-seg-list > li {
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.training .t-seg-list > li:last-child {
+  border-bottom: 0;
+}
+
+.training .t-seg-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 4.6rem 5.8rem 6.8rem 1.4rem;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.65rem 0.45rem;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  transition: background 120ms ease;
+}
+
+.training .t-seg-row:hover,
+.training .t-seg-list > li.is-open .t-seg-row {
+  background: var(--surface-2);
+}
+
+.training .t-seg-name {
+  min-width: 0;
+}
+
+.training .t-seg-name strong,
+.training .t-seg-name small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.training .t-seg-name strong {
+  color: var(--ink);
+  font-size: var(--step--1);
+  font-weight: 500;
+}
+
+.training .t-seg-name small {
+  margin-top: 0.08rem;
+  color: var(--ink-3);
+  font-size: var(--step--2);
+}
+
+.training .t-seg-time {
+  color: var(--ink);
+  font-size: var(--step-0);
+  text-align: right;
+}
+
+.training .t-seg-badge {
+  text-align: left;
+}
+
+.training .t-seg-badge .t-badge {
+  margin-left: 0;
+}
+
+.training .t-seg-rank {
+  color: var(--ink-2);
+  font-size: var(--step--1);
+  white-space: nowrap;
+}
+
+.training .t-seg-rank small,
+.training .t-seg-delta small {
+  color: var(--ink-3);
+  font-size: var(--step--2);
+}
+
+.training .t-seg-delta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  color: var(--ink-2);
+  font-size: var(--step--1);
+  white-space: nowrap;
+}
+
+.training .t-seg-chevron {
+  color: var(--ink-3);
+  font-size: var(--step-1);
+  text-align: center;
+}
+
+.training .t-seg-history {
+  padding: 0.3rem 0.45rem 0.8rem;
+}
+
+/* --------------------------------------------------------- routes page -- */
+
+.training .t-top-loops-note {
+  margin-top: 0;
+}
+
+.training .t-loop-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.6rem;
+  margin-top: 0.3rem;
+  list-style: none;
+}
+
+.training .t-loop-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  height: 100%;
+  padding: 0.8rem 0.85rem;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: inherit;
+  text-decoration: none;
+  transition:
+    box-shadow 120ms ease,
+    background 120ms ease;
+}
+
+.training .t-loop-card:hover {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.training .t-loop-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.training .t-loop-card-head strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--step--1);
+  font-weight: 540;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.training .t-loop-card:hover .t-loop-card-head strong {
+  color: var(--accent);
+}
+
+.training .t-loop-card-count {
+  color: var(--ink-3);
+  font-size: var(--step--1);
+}
+
+.training .t-loop-card-count b {
+  color: var(--ink);
+  font-size: var(--step-1);
+  font-weight: 540;
+}
+
+.training .t-loop-card dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-top: auto;
+}
+
+.training .t-loop-card dt {
+  color: var(--ink-3);
+  font-size: var(--step--2);
+}
+
+.training .t-loop-card dd {
+  color: var(--ink);
+  font-size: var(--step--1);
+}
+
+.training .t-loop-card dd small {
+  display: block;
+  color: var(--ink-3);
+  font-size: var(--step--2);
+}
+
+/* ---------------------------------------------------------- responsive -- */
+
+@media (max-width: 640px) {
+  .training .t-seg-row {
+    grid-template-columns: auto auto minmax(0, 1fr) 1.2rem;
+    grid-template-areas:
+      "name name name chevron"
+      "time badge delta delta";
+    gap: 0.35rem 0.6rem;
+  }
+
+  .training .t-seg-name {
+    grid-area: name;
+  }
+
+  .training .t-seg-time {
+    grid-area: time;
+    text-align: left;
+  }
+
+  .training .t-seg-badge {
+    grid-area: badge;
+  }
+
+  .training .t-seg-delta {
+    grid-area: delta;
+    flex-direction: row;
+    justify-content: flex-end;
+    gap: 0.4rem;
+    align-items: baseline;
+  }
+
+  .training .t-seg-chevron {
+    grid-area: chevron;
+  }
+
+  .training .t-loop-cards {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: thin;
+    padding-bottom: 0.3rem;
+  }
+
+  .training .t-loop-cards > li {
+    flex: 0 0 78%;
+    scroll-snap-align: start;
+  }
+
+  .training .t-loop-compare-panel .t-card-head {
+    flex-direction: column;
+  }
+
+  .training .t-loop-compare-panel .t-select,
+  .training .t-loop-compare-panel .t-select select {
+    width: 100%;
+  }
+
+  .training .t-loop-overlays {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Four columns on a phone: let the labels wrap rather than push the
+     difference out of view. */
+  .training .t-loop-delta th,
+  .training .t-loop-delta td {
+    padding-left: 0.3rem;
+    padding-right: 0.3rem;
+    font-size: var(--step--2);
+  }
+
+  .training .t-loop-delta td:first-child {
+    white-space: normal;
+  }
+}

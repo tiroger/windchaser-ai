@@ -13,6 +13,7 @@ export const TRAINING_SECTIONS = [
   { href: "/training/performance", label: "Performance", filtered: false },
   { href: "/training/garage", label: "Garage", filtered: false },
   { href: "/training/year", label: "Year in review", filtered: true },
+  { href: "/training/ask", label: "Ask", filtered: false },
 ] as const;
 
 const KINDS = Object.keys(SPORT_LABELS).filter((key) => key !== "All") as SportKind[];

@@ -122,24 +122,25 @@ variable "reconciliation_schedule" {
 variable "streams_backfill_schedule" {
   description = "How often to fetch streams for activities that do not have them yet."
   type        = string
-  default     = "rate(2 hours)"
+  default     = "rate(1 hour)"
 }
 
 variable "streams_backfill_limit" {
   description = <<-EOT
     Activities whose streams are fetched per backfill run, one Strava read
-    each. 25 every two hours is at most 300 reads a day, and the worker stops
-    sooner once the shared daily allowance is 80% spent, so strava_worker's
-    own calls always come first.
+    each. 50 an hour is at most 1,200 reads a day against the application's
+    2,000, and each batch stays well inside the 200-per-15-minute window. The
+    worker stops sooner once the shared daily allowance is 80% spent, so
+    strava_worker's own calls always come first.
   EOT
   type        = number
-  default     = 25
+  default     = 50
 }
 
 variable "saved_routes_profile_limit" {
   description = "Saved-route profiles fetched per run; each costs one Strava read."
   type        = number
-  default     = 30
+  default     = 100
 }
 
 variable "schedules_enabled" {

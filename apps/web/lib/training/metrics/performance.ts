@@ -64,12 +64,12 @@ export const PROFILE_DURATIONS = [15, 60, 300, 1200, 3600];
 
 export type CurvePoint = { duration: number; watts: number; activityId: string; date: string };
 
-type PowerEntry = { id: string; day: number; date: string; bests: Record<string, number> };
+export type PowerEntry = { id: string; day: number; date: string; bests: Record<string, number> };
 
 const DAY_MS = 86_400_000;
 const dayNumber = (date: CalendarDate) => Date.UTC(date.year, date.month, date.day) / DAY_MS;
 
-function powerEntries(index: StreamsIndex): PowerEntry[] {
+export function powerEntries(index: StreamsIndex): PowerEntry[] {
   return Object.entries(index)
     .flatMap(([id, entry]) => {
       const date = calendarDate(entry.date);
