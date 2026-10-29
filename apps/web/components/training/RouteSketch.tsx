@@ -138,8 +138,3 @@ export function formatClock(epochS: number, timeZone: string): string {
   }
   return format.format(epochS * 1000);
 }
-
-/** The planner link for a ranked route at its window. */
-export function plannerHref(id: string, start: string): string {
-  return `/training/saved-routes?route=${encodeURIComponent(id)}&start=${encodeURIComponent(start)}`;
-}

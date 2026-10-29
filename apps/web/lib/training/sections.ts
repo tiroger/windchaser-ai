@@ -8,7 +8,6 @@ export const TRAINING_SECTIONS = [
   { href: "/training", label: "Overview", filtered: true },
   { href: "/training/activities", label: "Activities", filtered: true },
   { href: "/training/routes", label: "Routes", filtered: true },
-  { href: "/training/segments", label: "Segments", filtered: false },
   { href: "/training/saved-routes", label: "Saved routes", filtered: false },
   { href: "/training/heatmap", label: "Heatmap", filtered: true },
   { href: "/training/performance", label: "Performance", filtered: false },

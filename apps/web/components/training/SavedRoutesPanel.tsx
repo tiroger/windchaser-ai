@@ -1,15 +1,16 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
-import "@/app/training/route-day.css";
+import "@/app/styles/route-day.css";
 import { formatCalendarDate, formatHours, formatNumber } from "@/lib/training/activity-types";
 import type { RouteProfile, SavedRoute } from "@/lib/training/metrics/route-profile";
 import { DAY_LABELS, RANKING_DAYS, type RankedRoute, type RankingDay } from "@/lib/training/route-ranking";
+import { routePlannerHref } from "@/lib/wind-url";
 
 import RouteAnalysis, { TrackStats, type RouteTrack } from "./RouteAnalysis";
-import RoutePlanner from "./RoutePlanner";
 import { savedBadge, useRouteRanking } from "./RouteSketch";
 
 type Sort = "name" | RankingDay;
@@ -210,7 +211,25 @@ function RouteDetail({
         {route.description && <p className="t-note">{route.description}</p>}
         <RouteStats route={route} track={profile ?? undefined} />
       </article>
-      {profile && route.type !== "run" && <RoutePlanner routeId={route.id} profile={profile} start={start} />}
+      {route.type !== "run" && (
+        // Planning against the forecast is the wind page's job; this page
+        // keeps the route's own analysis.
+        <article className="panel">
+          <div className="t-card-head">
+            <div>
+              <span className="label">Ride planner · next 7 days</span>
+              <h2 className="t-card-title">When to ride it</h2>
+            </div>
+            <Link className="t-link" href={routePlannerHref(route.id, start)}>
+              Plan it on the wind page <span aria-hidden="true">→</span>
+            </Link>
+          </div>
+          <p className="t-note">
+            Predicted moving time for every start hour of the week at a power you choose, and the route coloured
+            by the wind you would meet.
+          </p>
+        </article>
+      )}
       {profile ? (
         <RouteAnalysis track={profile} />
       ) : (
