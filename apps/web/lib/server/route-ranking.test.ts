@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, test, vi } from "vitest";
 
 import type { SavedRoute } from "@/lib/training/metrics/route-profile";
+import { encodePolyline } from "@/lib/training/polyline";
 
 /**
  * The ranking end to end against stand-ins for S3 and Open-Meteo: how many
@@ -44,6 +45,9 @@ function route(id: string, name: string, miles: number, type: SavedRoute["type"]
     polyline: null,
   };
 }
+
+/** The list's own summary track, as Strava gives it. */
+const track = (id: string) => encodePolyline(PROFILES[id].latlng.filter((_, i) => i % 5 === 0));
 
 // Three Bay Area routes sharing cells, and one ride far away.
 const PROFILES: Record<string, ReturnType<typeof profile>> = {
@@ -119,8 +123,12 @@ async function load() {
 }
 
 beforeEach(() => {
-  ROUTES = ["1", "2", "3", "4"].map((id, i) => route(id, `Route ${id}`, [25, 19, 12, 19][i]));
-  ROUTES.push(route("5", "Run 5", 6, "run"));
+  ROUTES = ["1", "2", "3", "4"].map((id, i) => ({
+    ...route(id, `Route ${id}`, [25, 19, 12, 19][i]),
+    // Route 3 has no track in the list: its cells come in a top-up request.
+    polyline: id === "3" ? null : track(id),
+  }));
+  ROUTES.push({ ...route("5", "Run 5", 6, "run"), polyline: track("5") });
   etag = "v1";
   profileReads.count = 0;
   calls.length = 0;
@@ -145,7 +153,7 @@ describe("route ranking", () => {
     assert.equal(new Set(asked).size, asked.length, "no cell asked for twice");
     assert.equal(ranking.forecast.cells, asked.length);
     assert.equal(ranking.forecast.requests, calls.length);
-    assert.ok(calls.length <= 2, `${calls.length} requests`);
+    assert.equal(calls.length, 2, "the planned cells, then a top-up for the route with no track");
     assert.equal(stats.prepares, 1);
     // Ordered by score, sketches only on the top three.
     for (let i = 1; i < ranking.routes.length; i++) {

@@ -15,12 +15,15 @@ import { haversineM } from "@/lib/geo";
 import { DEFAULT_RIDER, sectionSpeed } from "@/lib/physics";
 import type { Rider } from "@/lib/types";
 
+import { decodePolyline } from "./polyline";
 import {
+  MAX_CELLS,
   RHO_REFERENCE,
   WET_PRECIP_PCT,
   assignCells,
   cellCentre,
   predictRide,
+  sampleCells,
   windPhrase,
   type CellSeries,
   type RouteSection,
@@ -410,6 +413,27 @@ export function planCells(
   };
 }
 
+/**
+ * The cells a route's summary track passes through, sampled as the planner
+ * samples its sections. The saved-routes list carries the track, so the
+ * forecast can be asked for while the detailed profiles are still loading;
+ * the two agree on all but the odd cell at a boundary, and routeCells covers
+ * those with the nearest that arrived.
+ */
+export function polylineCells(polyline: string | null, maxCells = MAX_CELLS): Array<[number, number]> {
+  if (!polyline) return [];
+  const points = decodePolyline(polyline);
+  if (points.length < 2) return [];
+  const sections: RouteSection[] = [];
+  let travelled = 0;
+  for (let i = 1; i < points.length; i++) {
+    const length = haversineM(points[i - 1], points[i]);
+    sections.push({ start_m: travelled, length_m: length, bearing_deg: 0, grade: 0, at: points[i], visible: false });
+    travelled += length;
+  }
+  return sampleCells(sections, maxCells).cells;
+}
+
 /** Farther than this from every forecast that arrived, a route is not ranked. */
 export const MAX_CELL_DISTANCE_M = 30_000;
 
@@ -572,5 +596,5 @@ export type RouteRanking = {
     cached_cells: number;
   };
   /** Where the time went when it was computed. */
-  timings_ms: { sections: number; forecast: number; model: number };
+  timings_ms: { sections_and_forecast: number; top_up: number; model: number };
 };

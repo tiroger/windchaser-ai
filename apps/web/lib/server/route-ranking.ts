@@ -28,6 +28,7 @@ import {
   gainPhrase,
   lightWinds,
   planCells,
+  polylineCells,
   rankingDates,
   routeCells,
   savingHeadline,
@@ -55,11 +56,13 @@ import {
  */
 
 /** Profiles read from S3 at once while preparing sections. */
-const PROFILE_CONCURRENCY = 16;
+const PROFILE_CONCURRENCY = 40;
 /** How long a computed ranking is served without recomputing. */
 export const RANKING_TTL_MS = 30 * 60 * 1000;
 /** A local snapshot has no ETag, so its sections are rebuilt this often instead. */
 const LOCAL_SECTIONS_TTL_MS = 10 * 60 * 1000;
+/** Extra cells at most for routes the first plan missed. */
+const TOP_UP_CELLS = 20;
 /** Sketches are attached to this many routes at the top of a response. */
 const SKETCHES = 3;
 
@@ -165,14 +168,28 @@ async function computeRanking(day: RankingDay, nowMs: number): Promise<FullRanki
     calibrationTable(),
     loadSettingsValue(),
   ]);
-  const { routes: prepared, missing } = await preparedRoutes(stored.etag, stored.value, nowMs);
+  // One forecast for every route: shared cells once, capped. Planned from
+  // the tracks in the list itself, so it is fetched while the profiles load.
+  const plan = planCells(stored.value.map((route) => polylineCells(route.polyline)), RANKING_CELL_CAP);
+  const [{ routes: prepared, missing }, fetched] = await Promise.all([
+    preparedRoutes(stored.etag, stored.value, nowMs),
+    fetchCellsBatched(plan.cells),
+  ]);
   const t1 = performance.now();
-
-  // One forecast for every route: shared cells once, capped.
-  const plan = planCells(prepared.map((p) => p.own), RANKING_CELL_CAP);
-  const fetched = await fetchCellsBatched(plan.cells);
+  // A route with none of its own cells in the plan (no track in the list,
+  // or squeezed out by the cap) gets them in one more request.
+  const orphans = prepared.filter((p) => !p.own.some((c) => fetched.cells[cellId(c)]));
+  const topUp = planCells(orphans.map((p) => p.own), TOP_UP_CELLS);
+  if (topUp.cells.length) {
+    const more = await fetchCellsBatched(topUp.cells);
+    Object.assign(fetched.cells, more.cells);
+    fetched.failed.push(...more.failed);
+    fetched.requests += more.requests;
+    fetched.cachedCount += more.cachedCount;
+  }
+  const planned = [...plan.cells, ...topUp.cells];
   const failed = new Set(fetched.failed);
-  const arrived = plan.cells.filter((c) => fetched.cells[cellId(c)]);
+  const arrived = planned.filter((c) => fetched.cells[cellId(c)]);
   if (!arrived.length) throw new Error("Forecast unavailable");
   const t2 = performance.now();
 
@@ -301,16 +318,16 @@ async function computeRanking(day: RankingDay, nowMs: number): Promise<FullRanki
     unranked,
     forecast: {
       cells: arrived.length,
-      requested_cells: plan.requested,
-      capped_cells: plan.dropped,
+      requested_cells: plan.requested + topUp.requested,
+      capped_cells: plan.dropped + topUp.dropped,
       failed_cells: fetched.failed.length,
       degraded_routes: ranked.filter((r) => r.degraded).length,
       requests: fetched.requests,
       cached_cells: fetched.cachedCount,
     },
     timings_ms: {
-      sections: Math.round(t1 - t0),
-      forecast: Math.round(t2 - t1),
+      sections_and_forecast: Math.round(t1 - t0),
+      top_up: Math.round(t2 - t1),
       model: Math.round(t3 - t2),
     },
     routes: ranked,

@@ -4,7 +4,8 @@ import { describe, test } from "vitest";
 import { DEFAULT_RIDER } from "@/lib/physics";
 import type { Rider } from "@/lib/types";
 
-import { buildSections, sunTimes, type CellSeries, type RawProfile, type RouteSection } from "./route-forecast";
+import { encodePolyline } from "./polyline";
+import { buildSections, sampleCells, sunTimes, type CellSeries, type RawProfile, type RouteSection } from "./route-forecast";
 import {
   LIGHT_WIND_SPREAD_S,
   RANKING_CELL_CAP,
@@ -16,6 +17,7 @@ import {
   gainPhrase,
   lightWinds,
   planCells,
+  polylineCells,
   rankingDates,
   routeCells,
   savingHeadline,
@@ -292,6 +294,14 @@ describe("forecast cells", () => {
     const keys = plan.cells.map((x) => x.join());
     assert.ok(keys.includes("45,-110") && (keys.includes("40,-120") || keys.includes("40.1,-120")));
     assert.ok(RANKING_CELL_CAP >= 40);
+  });
+
+  test("the list's summary track asks for the same cells as the profile", () => {
+    const profile = straight(60, 600, 30, 0, 37.7, -122.3);
+    const fromProfile = sampleCells(sectionsOf(profile)).cells;
+    const fromTrack = polylineCells(encodePolyline(profile.latlng.filter((_, i) => i % 10 === 0)));
+    assert.deepEqual(new Set(fromTrack.map((x) => x.join())), new Set(fromProfile.map((x) => x.join())));
+    assert.deepEqual(polylineCells(null), []);
   });
 
   test("a route whose cell failed falls back to the nearest one that arrived", () => {
