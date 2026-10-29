@@ -262,7 +262,8 @@ holds there now.
   position (the region they ride most when there is none). Each failure is
   logged with its class, Strava's status and Strava's message, and a 401 or
   403 stands discovery down for six hours. When it fails, the saved bundle's
-  discoveries near the same place stand in.
+  discoveries near the same place stand in, and the page says so in a quiet
+  source note rather than a warning.
 
 `strava_worker` also counts every segment effort in every ingested activity,
 tracked or not, into `segment-usage.json` (name, start point, distance, grade,
@@ -279,9 +280,19 @@ only explains and retrieves.
 - **Briefing** (`lib/server/briefing.ts`):
   - Claude through Amazon Bedrock, falling back to the Anthropic API, then to a
     deterministic template.
-  - The prompt carries only the computed evidence for the top five
-    opportunities, and is told never to state a number outside it.
-  - Responses are cached by a hash of that evidence.
+  - The prompt carries only computed evidence, and is told never to state a
+    number outside it:
+    - the top five windows (soft records left out), each with its still-air
+      best, the PR's rank in still air and any "rough here" caveat;
+    - up to three near misses from the week's best chances;
+    - the best saved route for the day, with its predicted and calm-air
+      times, tailwind share and whether it finishes before sunset.
+  - The browser builds that evidence from what it computed
+    (`lib/briefing-evidence.ts`) and keeps the body small: names clipped,
+    counts capped, numbers rounded. Amplify rejects a POST body over about
+    6 KB; a real body is about 3 KB and the worst case under 4 KB.
+  - Responses are cached by a hash of that evidence, so a changed route window
+    regenerates the briefing.
 - **Ask** (`lib/training/ask/`): a streaming tool-use agent on Claude Opus 5.5
   (Bedrock first, then the Anthropic API).
   - **Tools:** seven typed, schema-validated tools over the training data —

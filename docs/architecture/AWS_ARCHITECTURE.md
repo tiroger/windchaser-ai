@@ -75,7 +75,8 @@ flowchart TB
      and how lately each is ridden; ranking and region order lean on it.
    - **Discovery failures** are logged with the error's class, Strava's status
      and message; a 401 or 403 stands discovery down for six hours, and the
-     saved bundle's discoveries near the same place stand in.
+     saved bundle's discoveries near the same place stand in, noted quietly on
+     the page.
    - **Calibration:** applied from `calibration.json`.
    - **Fallback:** if Strava or the forecast is unavailable, the response uses
      the saved bundle in S3, and says so.
@@ -85,7 +86,10 @@ flowchart TB
    - **Routes mode** (`/?mode=routes`) instead calls
      `/api/training/route-ranking` and, for the route picked,
      `/api/training/saved-routes/{id}` and `/api/training/route-forecast`.
-4. `POST /api/briefing` sends the top five as evidence.
+4. `POST /api/briefing` sends the evidence: the top five windows with their
+   still-air facts, the week's near misses and the best saved route for the
+   day, all computed in the browser and kept well under Amplify's 6 KB body
+   limit.
    - Claude writes the briefing, cached by a hash of that evidence.
    - If the model fails or the per-instance call budget is spent, a
      deterministic template answers instead.
