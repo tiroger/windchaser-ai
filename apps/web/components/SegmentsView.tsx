@@ -318,6 +318,7 @@ export default function SegmentsView({
             <span className="label">
               {ranked.length} segments, ranked by your chance of a PR
             </span>
+            {bundle.discovery?.note && <span className="rail-note">{bundle.discovery.note}</span>}
           </div>
           <BestChances
             week={week}

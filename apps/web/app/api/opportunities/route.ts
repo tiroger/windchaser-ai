@@ -197,13 +197,18 @@ export async function GET(request: Request) {
     const searchAt: LatLon | null = here ?? (ridden ? [ridden.lat, ridden.lon] : null);
     const knownIds = new Set(known.map((s) => s.id));
 
+    // Discovery never warns on the page. Its failures are logged where they
+    // happen (lib/server/discovery.ts); the page gets a quiet note saying
+    // where the nearby segments came from.
     let discovered: Segment[] = [];
+    let discovery: NonNullable<Bundle["discovery"]> = { source: "none", note: null };
+    let discoveryFailure: string | null = null;
     if (searchAt && segmentSource === "live") {
       try {
         discovered = await discoverNear(searchAt, knownIds);
+        discovery = { source: "live", note: null };
       } catch (error) {
-        // Discovery is a bonus. Losing it must not cost the other sources.
-        notices.push(discoveryNotice(error));
+        discoveryFailure = discoveryNotice(error);
       }
     }
     if (discovered.length === 0 && searchAt) {
@@ -214,6 +219,16 @@ export async function GET(request: Request) {
           !knownIds.has(s.id) &&
           haversineM(searchAt, mid(s)) < SAVED_DISCOVERY_KM * 1000,
       );
+      if (discovered.length > 0) {
+        discovery = { source: "saved", note: "Nearby segments from the last saved discovery." };
+      } else if (discoveryFailure) {
+        discovery = { source: "none", note: "No nearby segments discovered this time." };
+      }
+      if (discoveryFailure) {
+        console.info(
+          `[discovery] ${discoveryFailure} ${discovered.length} saved discoveries stand in.`,
+        );
+      }
     }
 
     const all = mergeCandidates(
@@ -295,6 +310,7 @@ export async function GET(request: Request) {
       regions,
       segments: all.sort((a, b) => a.name.localeCompare(b.name)),
       forecast_cells: forecastCells,
+      discovery,
     };
     return Response.json(
       notices.length ? { ...bundle, notice: notices.join(" ") } : bundle,

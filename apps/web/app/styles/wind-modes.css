@@ -68,6 +68,12 @@
   }
 }
 
+/* A source note: where the nearby segments came from. Quiet, not a warning. */
+.rail-note {
+  color: var(--ink-3);
+  font-size: var(--step--2);
+}
+
 /* --------------------------------------------------------- chances -- */
 
 .chances {

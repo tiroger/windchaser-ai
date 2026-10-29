@@ -186,6 +186,8 @@ export interface Bundle {
   regions: Region[];
   segments: Segment[];
   forecast_cells: Record<string, ForecastCell>;
+  /** Where the discovered segments came from, as a quiet note for the page. */
+  discovery?: { source: "live" | "saved" | "none"; note: string | null };
 }
 
 /** Rider parameters feeding the constant-power model. */
