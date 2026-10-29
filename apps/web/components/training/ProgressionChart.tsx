@@ -130,7 +130,9 @@ export default function ProgressionChart({
           formatter: (value: number) => MONTHS[MONTH_TICKS.indexOf(value)] ?? "",
         },
       },
-      { type: "category", data: MONTHS, show: false },
+      // Positions the monthly bars only. Its hover line would snap to the
+      // nearest month and draw a second line beside the day-of-year one.
+      { type: "category", data: MONTHS, show: false, axisPointer: { show: false } },
     ],
     yAxis: {
       type: "value",
