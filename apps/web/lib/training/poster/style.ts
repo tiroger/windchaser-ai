@@ -83,11 +83,13 @@ export function buildPosterStyle(
       paint: { "line-color": theme.water, "line-width": zoomWidth(0.5, lineScale) },
     },
     {
+      // Protected areas; marine sanctuaries are left out, or they would lay
+      // the parks colour over open sea.
       id: "parks",
       type: "fill",
       source,
       "source-layer": "park",
-      filter: polygons,
+      filter: ["all", polygons, ["!=", ["get", "class"], "marine"]],
       paint: { "fill-color": theme.parks },
     },
     {

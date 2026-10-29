@@ -9,14 +9,14 @@ type Place = { name: string; lat: number; lon: number; km: number };
 // Metro areas and cycling regions, with cities inside the larger ones so a
 // zoomed-in view gets the city and a wide one the region.
 export const PLACES: readonly Place[] = [
-  { name: "San Francisco Bay Area", lat: 37.7, lon: -122.2, km: 85 },
+  { name: "San Francisco Bay Area", lat: 37.7, lon: -122.2, km: 70 },
   { name: "San Francisco", lat: 37.765, lon: -122.44, km: 9 },
   { name: "Oakland", lat: 37.81, lon: -122.24, km: 9 },
   { name: "Berkeley", lat: 37.875, lon: -122.27, km: 5 },
-  { name: "East Bay", lat: 37.82, lon: -122.12, km: 28 },
-  { name: "Marin", lat: 38.0, lon: -122.6, km: 22 },
-  { name: "Peninsula", lat: 37.48, lon: -122.25, km: 25 },
-  { name: "Silicon Valley", lat: 37.37, lon: -122.0, km: 22 },
+  { name: "East Bay", lat: 37.82, lon: -122.12, km: 18 },
+  { name: "Marin", lat: 38.0, lon: -122.6, km: 18 },
+  { name: "Peninsula", lat: 37.48, lon: -122.25, km: 20 },
+  { name: "Silicon Valley", lat: 37.37, lon: -122.0, km: 18 },
   { name: "San Jose", lat: 37.33, lon: -121.89, km: 14 },
   { name: "Santa Cruz", lat: 36.98, lon: -122.03, km: 15 },
   { name: "Napa Valley", lat: 38.4, lon: -122.36, km: 22 },
@@ -109,16 +109,20 @@ export function placeName(
 ): string | null {
   const [west, south, east, north] = bounds;
   const center = [(west + east) / 2, (south + north) / 2];
-  // Half the shorter side: what the view reliably shows around its centre.
+  // Half the longer side: a poster frame contains the whole view, so its
+  // longer side is the area the poster covers.
   const width = distanceKm([west, center[1]], [east, center[1]]);
   const height = distanceKm([center[0], south], [center[0], north]);
-  const viewKm = Math.max(1, Math.min(width, height) / 2);
+  const viewKm = Math.max(1, Math.max(width, height) / 2);
   let best: { place: Place; score: number } | null = null;
   for (const place of places) {
     const away = distanceKm(center, [place.lon, place.lat]);
     if (away > place.km) continue;
-    // Size match first; a nearer centre breaks near-ties.
-    const score = Math.abs(Math.log(place.km / viewKm)) + (0.25 * away) / place.km;
+    // Size match first, and a place smaller than the view counts double: a
+    // poster can be of a region within a wider one, but should not be named
+    // after a corner of it. A nearer centre breaks near-ties.
+    const ratio = Math.log(place.km / viewKm);
+    const score = (ratio < 0 ? -2 * ratio : ratio) + (0.25 * away) / place.km;
     if (!best || score < best.score) best = { place, score };
   }
   return best?.place.name ?? null;

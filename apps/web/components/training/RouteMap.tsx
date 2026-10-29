@@ -7,12 +7,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { alpha } from "@/lib/training/color";
 import { homeFocus, nearFocus as near } from "@/lib/training/heatmap-focus";
 import { decodePolyline } from "@/lib/training/polyline";
+import { buildPosterStyle, heatPaint, STANDARD_HEAT_OPACITY } from "@/lib/training/poster/style";
+import { posterTheme } from "@/lib/training/poster/themes";
 
 import { useChartPalette } from "./Chart";
 import { BASEMAPS } from "./mapStyle";
 
 /** `date` (YYYY-MM-DD) lets a heatmap tell recent riding from old. */
 export type MapRoute = { id: string; polyline: string; date?: string };
+
+/** Where a heatmap is looking: [lng, lat], and [west, south, east, north]. */
+export type MapView = { center: [number, number]; bounds: [number, number, number, number]; zoom: number };
 
 type FeatureCollection = {
   type: "FeatureCollection";
@@ -87,18 +92,29 @@ function spread(values: number[]): [number, number] {
  *
  * A theme change rebuilds the map on the other basemap rather than swapping
  * the style in place: the layers, colours and framing all depend on it, and a
- * rebuild re-derives them from one path instead of two.
+ * rebuild re-derives them from one path instead of two. A rebuild keeps the
+ * view the rider had.
+ *
+ * A heatmap can be drawn on one of the poster themes instead of the site's
+ * basemap (`mapTheme`), with the theme's own heat colour.
  */
 export default function RouteMap({
   routes,
   variant,
   onSelect,
+  onView,
   height = 420,
+  mapTheme = "standard",
+  labels = false,
 }: {
   routes: MapRoute[];
   variant: "route" | "heat";
   onSelect?: (id: string) => void;
+  /** Told where the map is looking whenever it settles. */
+  onView?: (view: MapView) => void;
   height?: number;
+  mapTheme?: string;
+  labels?: boolean;
 }) {
   const palette = useChartPalette();
   const container = useRef<HTMLDivElement>(null);
@@ -129,17 +145,22 @@ export default function RouteMap({
     };
   }, [heatmap]);
   const geoRef = useRef(geo);
+  const onViewRef = useRef(onView);
+  /** The last settled view, so a rebuild for a new theme stays where it was. */
+  const camera = useRef<{ center: [number, number]; zoom: number } | null>(null);
 
   useEffect(() => {
     onSelectRef.current = onSelect;
-  }, [onSelect]);
+    onViewRef.current = onView;
+  }, [onSelect, onView]);
 
   useEffect(() => {
     if (!container.current) return;
     const holder = container.current;
+    const theme = variant === "heat" ? posterTheme(mapTheme) : null;
     const instance = new MapLibreMap({
       container: holder,
-      style: BASEMAPS[palette.theme],
+      style: theme ? buildPosterStyle(theme, { labels }) : BASEMAPS[palette.theme],
       center: [-122.27, 37.8],
       zoom: 9,
       attributionControl: { compact: true },
@@ -173,22 +194,11 @@ export default function RouteMap({
         type: "line",
         source: "routes",
         layout: { "line-cap": "round", "line-join": "round" },
+        // Overlap is the signal, so each heat line stays faint.
         paint: heat
-          ? {
-              "line-color": palette.accent,
-              // Overlap is the signal, so each line stays faint; a light
-              // basemap needs a little more to register at all.
-              "line-opacity": [
-                "interpolate",
-                ["linear"],
-                ["zoom"],
-                8,
-                light ? 0.22 : 0.16,
-                13,
-                light ? 0.4 : 0.3,
-              ],
-              "line-width": ["interpolate", ["linear"], ["zoom"], 8, 1.1, 14, 2.6],
-            }
+          ? theme
+            ? heatPaint(theme.heat.color, theme.heat.opacity)
+            : heatPaint(palette.accent, STANDARD_HEAT_OPACITY[light ? "light" : "dark"])
           : { "line-color": palette.accent, "line-width": 3.4 },
       });
       if (heat) {
@@ -210,18 +220,33 @@ export default function RouteMap({
           instance.getCanvas().style.cursor = "";
         });
       }
-      if (geoRef.current.bounds) {
+      if (camera.current) {
+        instance.jumpTo(camera.current);
+      } else if (geoRef.current.bounds) {
         instance.fitBounds(geoRef.current.bounds, { padding: 36, duration: 0, maxZoom: 14 });
       }
+      report();
+      instance.on("moveend", report);
       holder.setAttribute("data-map-ready", "true");
     });
+
+    function report() {
+      const center = instance.getCenter();
+      const bounds = instance.getBounds();
+      camera.current = { center: [center.lng, center.lat], zoom: instance.getZoom() };
+      onViewRef.current?.({
+        center: [center.lng, center.lat],
+        bounds: [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()],
+        zoom: instance.getZoom(),
+      });
+    }
 
     return () => {
       resize.disconnect();
       instance.remove();
       map.current = null;
     };
-  }, [variant, palette]);
+  }, [variant, palette, mapTheme, labels]);
 
   useEffect(() => {
     geoRef.current = geo;
@@ -232,5 +257,13 @@ export default function RouteMap({
     if (geo.bounds) instance.fitBounds(geo.bounds, { padding: 36, duration: 400, maxZoom: 14 });
   }, [geo]);
 
-  return <div ref={container} className="t-map" style={{ height }} />;
+  const ground = variant === "heat" ? posterTheme(mapTheme)?.bg : undefined;
+  return (
+    <div
+      ref={container}
+      className="t-map"
+      data-map-theme={variant === "heat" ? mapTheme : undefined}
+      style={{ height, ...(ground ? { background: ground } : {}) }}
+    />
+  );
 }

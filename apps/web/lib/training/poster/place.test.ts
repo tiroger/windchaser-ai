@@ -44,3 +44,14 @@ describe("poster title", () => {
     expect(distanceKm([-122.42, 37.77], [-73.99, 40.73])).toBeLessThan(4200);
   });
 });
+
+describe("poster title for a wide view", () => {
+  it("goes by the longer side, as the poster frame does", () => {
+    // The desktop heatmap: about 120 km across, 50 km tall, over the bay.
+    expect(placeName([-122.65, 37.58, -121.95, 38.03])).toBe("San Francisco Bay Area");
+  });
+
+  it("names a region within a wider one when the view is that region", () => {
+    expect(placeName(view([-122.6, 38.0], 30))).toBe("Marin");
+  });
+});

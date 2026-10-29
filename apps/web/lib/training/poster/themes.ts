@@ -63,8 +63,8 @@ export const POSTER_THEMES: readonly PosterTheme[] = [
       residential: "#505050",
       default: "#808080",
     },
-    roadOpacity: 0.42,
-    heat: { color: "#FF6A2B", opacity: [0.2, 0.38] },
+    roadOpacity: 0.36,
+    heat: { color: "#FF6A2B", opacity: [0.13, 0.3] },
   },
   {
     id: "blueprint",
@@ -86,7 +86,7 @@ export const POSTER_THEMES: readonly PosterTheme[] = [
       default: "#7BAED4",
     },
     roadOpacity: 0.45,
-    heat: { color: "#FFC24D", opacity: [0.22, 0.4] },
+    heat: { color: "#FFC24D", opacity: [0.14, 0.32] },
   },
   {
     id: "japanese_ink",
@@ -107,8 +107,8 @@ export const POSTER_THEMES: readonly PosterTheme[] = [
       residential: "#B8B8B8",
       default: "#909090",
     },
-    roadOpacity: 0.5,
-    heat: { color: "#D13B1F", opacity: [0.24, 0.44] },
+    roadOpacity: 0.42,
+    heat: { color: "#D13B1F", opacity: [0.16, 0.36] },
   },
   {
     id: "warm_beige",
@@ -130,7 +130,7 @@ export const POSTER_THEMES: readonly PosterTheme[] = [
       default: "#C9BBAA",
     },
     roadOpacity: 0.75,
-    heat: { color: "#9A3412", opacity: [0.24, 0.44] },
+    heat: { color: "#9A3412", opacity: [0.16, 0.36] },
   },
   {
     id: "midnight_blue",
@@ -151,8 +151,8 @@ export const POSTER_THEMES: readonly PosterTheme[] = [
       residential: "#6B5B4F",
       default: "#8B7355",
     },
-    roadOpacity: 0.4,
-    heat: { color: "#FFE7A3", opacity: [0.2, 0.38] },
+    roadOpacity: 0.32,
+    heat: { color: "#FFF1CC", opacity: [0.13, 0.3] },
   },
   {
     id: "terracotta",
@@ -174,7 +174,7 @@ export const POSTER_THEMES: readonly PosterTheme[] = [
       default: "#D9A08A",
     },
     roadOpacity: 0.7,
-    heat: { color: "#145A66", opacity: [0.24, 0.44] },
+    heat: { color: "#145A66", opacity: [0.16, 0.36] },
   },
 ];
 
