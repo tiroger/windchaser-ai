@@ -1,4 +1,8 @@
+import { toSections } from "@/lib/geo";
+import type { Rider } from "@/lib/types";
+
 import { decodePolyline } from "./polyline";
+import { stillAirEffort, type StillAirReason, type StillAirResult } from "./still-air";
 
 /**
  * Segment history for the Training section, from the effort history the
@@ -18,6 +22,7 @@ export type EffortWeather = {
   gust_ms?: number | null;
   temperature_c?: number | null;
   humidity_pct?: number | null;
+  pressure_hpa?: number | null;
   precip_mm?: number | null;
 };
 
@@ -29,6 +34,8 @@ export type StoredEffort = {
   elapsed_time_s: number;
   moving_time_s?: number | null;
   average_watts?: number | null;
+  /** True when average_watts came from a power meter rather than Strava's estimate. */
+  device_watts?: boolean | null;
   average_heartrate?: number | null;
   weather?: EffortWeather | null;
 };
@@ -38,8 +45,10 @@ export type StoredSegment = {
   name: string;
   distance_m?: number | null;
   average_grade?: number | null;
-  /** The segment's line, [lat, lng]; used only on the server to place efforts. */
+  /** The segment's line, [lat, lng]; used only on the server, never sent to a browser. */
   points?: Array<[number, number]> | null;
+  /** Altitude along the segment, for gradient that varies section by section. */
+  elevation_profile?: { distance_m: number[]; altitude_m: number[] } | null;
 };
 
 export type EffortHistory = {
@@ -69,6 +78,18 @@ function finite(value: unknown): number | null {
   return typeof number === "number" && Number.isFinite(number) ? number : null;
 }
 
+function parseProfile(raw: unknown): StoredSegment["elevation_profile"] {
+  const profile = raw as { distance_m?: unknown; altitude_m?: unknown } | null | undefined;
+  const distance = profile?.distance_m;
+  const altitude = profile?.altitude_m;
+  if (!Array.isArray(distance) || !Array.isArray(altitude)) return null;
+  if (distance.length < 2 || distance.length !== altitude.length) return null;
+  if (![...distance, ...altitude].every((value) => typeof value === "number" && Number.isFinite(value))) {
+    return null;
+  }
+  return { distance_m: distance as number[], altitude_m: altitude as number[] };
+}
+
 /** Validates efforts.json, dropping entries too incomplete to rank. */
 export function parseEffortHistory(raw: unknown): EffortHistory {
   const object = (raw ?? {}) as { segments?: unknown; efforts?: unknown };
@@ -85,6 +106,7 @@ export function parseEffortHistory(raw: unknown): EffortHistory {
         distance_m: finite(segment.distance_m),
         average_grade: finite(segment.average_grade),
         points: Array.isArray(segment.points) ? segment.points : null,
+        elevation_profile: parseProfile(segment.elevation_profile),
       };
     }
   }
@@ -105,6 +127,7 @@ export function parseEffortHistory(raw: unknown): EffortHistory {
         elapsed_time_s: elapsed,
         moving_time_s: finite(effort.moving_time_s),
         average_watts: finite(effort.average_watts),
+        device_watts: effort.device_watts === true,
         average_heartrate: finite(effort.average_heartrate),
         weather: effort.weather && typeof effort.weather === "object" ? effort.weather : null,
       });
@@ -212,13 +235,132 @@ function range(from: number, to: number): number[] {
   return Array.from({ length: to - from + 1 }, (_, index) => from + index);
 }
 
+// ---------------------------------------------------------- still air --
+
+/**
+ * Whether still-air time is borne out on a segment, judged by the power meter.
+ *
+ * If the wind correction is right, an effort's still-air time should follow
+ * the power the meter recorded more closely than its raw time does: the wind
+ * was noise between the two, and the correction removes it. That is checked
+ * per segment rather than assumed, because it is not true everywhere. On a
+ * sheltered road the hourly reanalysis describes wind the rider never met, and
+ * correcting for it adds scatter instead of removing it.
+ *
+ * - `better`: still-air time tracks measured power at least as well as raw time.
+ * - `worse`: it tracks it noticeably less well; shown with a caveat.
+ * - `unchecked`: too few metered efforts here to say.
+ */
+export type StillAirCheck = "better" | "worse" | "unchecked";
+
+/** Metered efforts a segment needs before the check is trusted. */
+export const CHECK_MIN_EFFORTS = 5;
+/** How much worse (in R²) still-air may track power before it earns a caveat. */
+const CHECK_TOLERANCE = 0.03;
+
+export type StillAirIndex = {
+  /** Aligned with history.efforts. */
+  results: StillAirResult[];
+  checks: Map<number, StillAirCheck>;
+};
+
+/** Squared correlation; null when either side has no spread. */
+export function rSquared(x: number[], y: number[]): number | null {
+  if (x.length < 3 || x.length !== y.length) return null;
+  const mx = x.reduce((a, b) => a + b, 0) / x.length;
+  const my = y.reduce((a, b) => a + b, 0) / y.length;
+  let sxy = 0;
+  let sxx = 0;
+  let syy = 0;
+  x.forEach((xi, i) => {
+    sxy += (xi - mx) * (y[i] - my);
+    sxx += (xi - mx) ** 2;
+    syy += (y[i] - my) ** 2;
+  });
+  return sxx > 0 && syy > 0 ? (sxy * sxy) / (sxx * syy) : null;
+}
+
+/** The segment's line as physics sections, or none when it has no usable line. */
+export function segmentSections(segment: StoredSegment | undefined) {
+  if (!segment?.points || segment.points.length < 2) return [];
+  return toSections(segment.points, segment.average_grade ?? 0, segment.elevation_profile);
+}
+
+/**
+ * Still-air time for every effort, and the per-segment check against the
+ * power meter. Computed once per effort history and cached by the caller.
+ */
+export function stillAirIndex(history: EffortHistory, rider: Rider): StillAirIndex {
+  const sections = new Map<number, ReturnType<typeof segmentSections>>();
+  const results = history.efforts.map((effort) => {
+    let lines = sections.get(effort.segment_id);
+    if (!lines) {
+      lines = segmentSections(history.segments[String(effort.segment_id)]);
+      sections.set(effort.segment_id, lines);
+    }
+    return stillAirEffort(lines, rider, effort);
+  });
+
+  const metered = new Map<number, Array<{ watts: number; raw: number; still: number }>>();
+  history.efforts.forEach((effort, index) => {
+    const result = results[index];
+    if (result.kind !== "adjusted" || !effort.device_watts || !effort.average_watts) return;
+    // Like for like: moving time on both sides, so stops add no scatter.
+    const moving = Math.min(effort.moving_time_s || effort.elapsed_time_s, effort.elapsed_time_s);
+    const stopped = effort.elapsed_time_s - moving;
+    const list = metered.get(effort.segment_id) ?? [];
+    list.push({ watts: effort.average_watts, raw: moving, still: result.stillAirSeconds - stopped });
+    metered.set(effort.segment_id, list);
+  });
+
+  const checks = new Map<number, StillAirCheck>();
+  for (const id of sections.keys()) {
+    const list = metered.get(id) ?? [];
+    if (list.length < CHECK_MIN_EFFORTS) {
+      checks.set(id, "unchecked");
+      continue;
+    }
+    // Time against power is a power law, so straight in logs.
+    const watts = list.map((entry) => Math.log(entry.watts));
+    const raw = rSquared(watts, list.map((entry) => Math.log(entry.raw)));
+    const still = rSquared(watts, list.map((entry) => Math.log(entry.still)));
+    checks.set(
+      id,
+      raw === null || still === null ? "unchecked" : still >= raw - CHECK_TOLERANCE ? "better" : "worse",
+    );
+  }
+  return { results, checks };
+}
+
 // ----------------------------------------------------------- history --
 
 export type SegmentHistoryPoint = {
   /** Local date of the effort when its activity is known, else the UTC date. */
   date: string;
   elapsedSeconds: number;
+  /** Null when the effort has no still-air time; see the row's reason. */
+  stillAirSeconds: number | null;
   activityId: string | null;
+};
+
+/** This effort and its segment, measured in still air. */
+export type StillAirSummary = {
+  /** This effort's still-air time; null with a reason when there is none. */
+  seconds: number | null;
+  reason: StillAirReason | null;
+  /** Net tailwind along the segment at rider height, m/s; negative is a headwind. */
+  tailwindMs: number | null;
+  /** The steady power that reproduces the recorded time in the recorded wind. */
+  impliedWatts: number | null;
+  /** Rank among the segment's efforts that have a still-air time. */
+  rank: number | null;
+  /** How many of the segment's efforts have a still-air time. */
+  count: number;
+  /** The fastest still-air time on the segment, and where it was ridden. */
+  bestSeconds: number | null;
+  bestDate: string | null;
+  bestActivityId: string | null;
+  check: StillAirCheck;
 };
 
 export type SegmentEffortRow = {
@@ -230,6 +372,8 @@ export type SegmentEffortRow = {
   averageGrade: number | null;
   elapsedSeconds: number;
   averageWatts: number | null;
+  /** Average power from a power meter; null when Strava estimated it or none was recorded. */
+  measuredWatts: number | null;
   averageHeartrate: number | null;
   /** 1 is the fastest of all your efforts; ties share a rank. */
   rank: number;
@@ -241,6 +385,8 @@ export type SegmentEffortRow = {
   prDate: string;
   prActivityId: string | null;
   weather: EffortWeather | null;
+  /** Null when still-air times were not computed (no rider model to compute them with). */
+  stillAir: StillAirSummary | null;
   /** Every effort on the segment, oldest first. */
   history: SegmentHistoryPoint[];
 };
@@ -265,6 +411,7 @@ export function activitySegments(
   history: EffortHistory,
   links: Map<number, string>,
   activityDates: Map<string, string>,
+  stillAir: StillAirIndex | null = null,
 ): SegmentEffortRow[] {
   const bySegment = new Map<number, number[]>();
   history.efforts.forEach((effort, index) => {
@@ -278,7 +425,13 @@ export function activitySegments(
     .filter(({ index }) => links.get(index) === activityId)
     .sort((a, b) => a.effort.start_date.localeCompare(b.effort.start_date));
 
-  return mine.map(({ effort }) => {
+  const round1 = (value: number) => Math.round(value * 10) / 10;
+  const stillAt = (index: number) => {
+    const result = stillAir?.results[index];
+    return result?.kind === "adjusted" ? round1(result.stillAirSeconds) : null;
+  };
+
+  return mine.map(({ effort, index: effortIndex }) => {
     const indices = bySegment.get(effort.segment_id) ?? [];
     const all = indices.map((index) => history.efforts[index]);
     const times = all.map((entry) => entry.elapsed_time_s);
@@ -298,6 +451,32 @@ export function activitySegments(
     const pr = history.efforts[prIndex];
     const prActivityId = links.get(prIndex) ?? null;
     const segment = history.segments[String(effort.segment_id)];
+
+    let summary: StillAirSummary | null = null;
+    if (stillAir) {
+      const result = stillAir.results[effortIndex];
+      const adjusted = indices.filter((index) => stillAt(index) !== null);
+      const stillTimes = adjusted.map((index) => stillAt(index)!);
+      let best: number | null = null;
+      for (const index of adjusted) {
+        if (best === null || stillAt(index)! < stillAt(best)!) best = index;
+      }
+      const own = stillAt(effortIndex);
+      const bestActivity = best === null ? null : (links.get(best) ?? null);
+      summary = {
+        seconds: own,
+        reason: result?.kind === "none" ? result.reason : null,
+        tailwindMs: result?.kind === "adjusted" ? round1(result.tailwindMs) : null,
+        impliedWatts: result?.kind === "adjusted" ? Math.round(result.impliedWatts) : null,
+        rank: own === null ? null : effortRank(own, stillTimes),
+        count: adjusted.length,
+        bestSeconds: best === null ? null : stillAt(best),
+        bestDate: best === null ? null : effortDate(history.efforts[best], bestActivity, activityDates),
+        bestActivityId: bestActivity,
+        check: stillAir.checks.get(effort.segment_id) ?? "unchecked",
+      };
+    }
+
     return {
       segmentId: effort.segment_id,
       name: segment?.name ?? "Segment",
@@ -305,6 +484,7 @@ export function activitySegments(
       averageGrade: segment?.average_grade ?? null,
       elapsedSeconds: effort.elapsed_time_s,
       averageWatts: effort.average_watts ?? null,
+      measuredWatts: effort.device_watts ? (effort.average_watts ?? null) : null,
       averageHeartrate: effort.average_heartrate ?? null,
       rank: effortRank(effort.elapsed_time_s, times),
       efforts: all.length,
@@ -313,6 +493,7 @@ export function activitySegments(
       prDate: effortDate(pr, prActivityId, activityDates),
       prActivityId,
       weather: effort.weather ?? null,
+      stillAir: summary,
       history: [...indices]
         .sort((a, b) => history.efforts[a].start_date.localeCompare(history.efforts[b].start_date))
         .map((index) => {
@@ -321,6 +502,7 @@ export function activitySegments(
           return {
             date: effortDate(entry, linked, activityDates),
             elapsedSeconds: entry.elapsed_time_s,
+            stillAirSeconds: stillAt(index),
             activityId: linked,
           };
         }),

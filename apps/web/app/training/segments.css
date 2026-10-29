@@ -1,0 +1,306 @@
+/*
+  Still-air times and PR chances (activity detail and the Segments page).
+
+  Same rules as training.css: every selector under .training, colours only
+  from WindChaser tokens or color-mix() of them. Still air is the wind blue;
+  a PR chance is the accent.
+*/
+
+/* -------------------------------------------------------- still air -- */
+
+.training .t-seg-name .t-sa-line {
+  color: var(--wind);
+}
+
+.training .t-sa-rough {
+  color: var(--warn);
+  cursor: help;
+}
+
+.training .t-sa-toggle .chip {
+  white-space: nowrap;
+}
+
+.training .t-sa-chart-head {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.15rem;
+}
+
+.training .t-sa-chart-head .chip {
+  height: 26px;
+  padding: 0 0.65rem;
+  font-size: var(--step--2);
+}
+
+/* ------------------------------------------------------- PR chances -- */
+
+.training .t-pc-list {
+  margin-top: 0.4rem;
+  list-style: none;
+}
+
+.training .t-pc-list > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.2rem 1rem;
+  padding: 0.7rem 0.1rem;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.training .t-pc-list > li:last-child {
+  border-bottom: 0;
+}
+
+.training .t-pc-when {
+  color: var(--ink-3);
+  font-size: var(--step--2);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.training .t-pc-name {
+  display: block;
+  overflow: hidden;
+  margin-top: 0.08rem;
+  color: var(--ink);
+  font-size: var(--step-0);
+  font-weight: 540;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.training .t-pc-name a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.training .t-pc-name a:hover {
+  color: var(--accent);
+}
+
+.training .t-pc-facts {
+  margin-top: 0.15rem;
+  color: var(--ink-2);
+  font-size: var(--step--1);
+  line-height: 1.5;
+}
+
+.training .t-pc-facts .is-tail {
+  color: var(--wind);
+}
+
+.training .t-pc-confidence {
+  margin-top: 0.1rem;
+  color: var(--ink-3);
+  font-size: var(--step--2);
+  line-height: 1.5;
+}
+
+.training .t-pc-gap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.1rem;
+  padding-top: 0.2rem;
+  white-space: nowrap;
+}
+
+.training .t-pc-gap strong {
+  color: var(--ink);
+  font-size: var(--step-1);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.training .t-pc-gap.is-beat strong {
+  color: var(--accent);
+}
+
+.training .t-pc-gap small {
+  color: var(--ink-3);
+  font-size: var(--step--2);
+}
+
+.training .t-pc-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.9rem;
+  margin-top: 0.25rem;
+}
+
+.training .t-pc-links .t-link {
+  font-size: var(--step--2);
+}
+
+.training .t-pc-sub {
+  margin-top: 1rem;
+}
+
+.training .t-pc-list.is-quiet .t-pc-name {
+  font-size: var(--step--1);
+}
+
+.training .t-pc-list.is-quiet > li {
+  padding: 0.5rem 0.1rem;
+}
+
+.training .t-pc-skeleton {
+  height: 180px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--surface-2) 0%,
+    color-mix(in srgb, var(--surface-2) 55%, var(--surface)) 50%,
+    var(--surface-2) 100%
+  );
+  background-size: 200% 100%;
+  animation: t-pc-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes t-pc-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .training .t-pc-skeleton {
+    animation: none;
+  }
+}
+
+/* ------------------------------------------------------ leaderboards -- */
+
+.training .t-lb-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 0.6rem;
+  margin-top: 0.4rem;
+  list-style: none;
+}
+
+.training .t-lb-card {
+  min-width: 0;
+  padding: 0.75rem 0.85rem 0.6rem;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.training .t-lb-card h3 {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--step--1);
+  font-weight: 540;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.training .t-lb-meta {
+  margin-top: 0.1rem;
+  color: var(--ink-3);
+  font-size: var(--step--2);
+}
+
+.training .t-lb-card ol {
+  margin-top: 0.45rem;
+  list-style: none;
+}
+
+.training .t-lb-card li {
+  display: grid;
+  grid-template-columns: 1.4rem minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.22rem 0;
+  border-top: 1px solid var(--line-soft);
+  font-size: var(--step--1);
+}
+
+.training .t-lb-rank {
+  color: var(--ink-3);
+  font-size: var(--step--2);
+}
+
+.training .t-lb-card li:first-child .t-lb-rank {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.training .t-lb-date {
+  overflow: hidden;
+  color: var(--ink-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.training .t-lb-date a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.training .t-lb-date a:hover {
+  color: var(--accent);
+}
+
+.training .t-lb-date small {
+  margin-left: 0.35rem;
+  color: var(--ink-3);
+  font-size: var(--step--2);
+}
+
+.training .t-lb-time {
+  color: var(--ink);
+  text-align: right;
+}
+
+.training .t-lb-time small {
+  display: block;
+  color: var(--ink-3);
+  font-size: var(--step--2);
+}
+
+.training .t-lb-note {
+  margin-top: 0.4rem;
+  color: var(--ink-3);
+  font-size: var(--step--2);
+  line-height: 1.45;
+}
+
+.training .t-lb-note.is-rough {
+  color: var(--warn);
+}
+
+.training .t-lb-away {
+  margin-top: 0.8rem;
+}
+
+.training .t-lb-away > summary {
+  width: fit-content;
+  color: var(--ink-2);
+  font-size: var(--step--1);
+  cursor: pointer;
+}
+
+.training .t-lb-away > summary:hover {
+  color: var(--accent);
+}
+
+@media (max-width: 640px) {
+  .training .t-pc-list > li {
+    gap: 0.2rem 0.6rem;
+  }
+
+  .training .t-pc-gap strong {
+    font-size: var(--step-0);
+  }
+
+  .training .t-lb-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
