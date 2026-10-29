@@ -75,3 +75,13 @@ data/training-snapshot/
 
 # Working plans stay local.
 docs/PROJECT_PLAN.md
+
+# Modeling workspace. The notebooks are code only; everything they compute is
+# personal (ride data, fitted results) and the repository is public, so the
+# data cache, marimo session state and every export stay local.
+modeling/.cache/
+modeling/exports/
+modeling/**/*.html
+modeling/**/*.parquet
+modeling/**/*.csv
+__marimo__/

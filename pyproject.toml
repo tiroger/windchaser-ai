@@ -8,6 +8,15 @@ dependencies = []
 
 [dependency-groups]
 dev = []
+modeling = [
+    "altair>=6.3.0",
+    "boto3>=1.43.121",
+    "marimo>=0.25.2",
+    "numpy>=2.5.4",
+    "pandas>=3.1.0",
+    "scikit-learn>=1.9.1",
+    "scipy>=1.18.1",
+]
 
 [tool.uv]
 package = false
