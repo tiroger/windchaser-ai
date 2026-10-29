@@ -1,7 +1,12 @@
 name: Deploy Development
 
+# Runs when CI finishes on main, and deploys only if it passed: Terraform
+# first, then the web build on Amplify, then smoke tests against the live
+# site. Amplify's own auto-build is off for this reason (environments/dev).
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 
@@ -18,7 +23,9 @@ jobs:
     # Guard on a repository variable only. The apply role ARN is scoped to the
     # GitHub environment, and environment variables are not visible to a
     # job-level if, so testing it here made the job skip unconditionally.
-    if: ${{ vars.TERRAFORM_STATE_BUCKET != '' }}
+    if: >-
+      ${{ vars.TERRAFORM_STATE_BUCKET != '' && (github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')) }}
     runs-on: ubuntu-latest
     environment: development
     env:
@@ -27,8 +34,13 @@ jobs:
       # Kept out of the repository, which is public. Unset simply means the
       # alert topic is created without a subscriber.
       TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+      # The commit CI tested, not whatever main points at by the time this runs.
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      SITE_URL: https://windchaser.io
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
 
       - name: Verify the environment supplies an apply role
         run: |
@@ -41,6 +53,8 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.15.8
+          # Plain stdout, so `terraform output -raw` can be captured below.
+          terraform_wrapper: false
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -58,7 +72,39 @@ jobs:
             -backend-config="use_lockfile=true"
           terraform plan -out=tfplan
           terraform apply -auto-approve tfplan
+          echo "AMPLIFY_APP_ID=$(terraform output -raw web_app_id)" >> "$GITHUB_ENV"
 
-      - name: Deployed smoke test placeholder
-        run: echo "Add environment URL smoke tests with the first web slice."
+      - name: Build and deploy the web app on Amplify
+        run: |
+          # Amplify runs one job per branch at a time and refuses to start
+          # another, so wait out one already running (a manual release, say).
+          job_id=""
+          for _ in $(seq 1 40); do
+            if job_id="$(aws amplify start-job --app-id "$AMPLIFY_APP_ID" --branch-name main \
+              --job-type RELEASE --commit-id "$DEPLOY_SHA" --query 'jobSummary.jobId' --output text)"; then
+              break
+            fi
+            echo "Another Amplify job is running; retrying in 30 s"
+            sleep 30
+          done
+          [ -n "$job_id" ] || { echo "Could not start an Amplify job"; exit 1; }
+          echo "Amplify job $job_id for $DEPLOY_SHA"
+          # A build takes a few minutes; Amplify stops one at 30.
+          for _ in $(seq 1 120); do
+            status="$(aws amplify get-job --app-id "$AMPLIFY_APP_ID" --branch-name main \
+              --job-id "$job_id" --query 'job.summary.status' --output text)"
+            case "$status" in
+              SUCCEED) echo "Amplify job $job_id succeeded"; exit 0 ;;
+              FAILED|CANCELLED)
+                echo "Amplify job $job_id ended $status"
+                aws amplify get-job --app-id "$AMPLIFY_APP_ID" --branch-name main --job-id "$job_id" \
+                  --query 'job.steps[].[stepName,status]' --output text
+                exit 1 ;;
+            esac
+            sleep 15
+          done
+          echo "Amplify job $job_id did not finish within 30 minutes"
+          exit 1
 
+      - name: Smoke test the live site
+        run: scripts/smoke_test.sh "$SITE_URL"

@@ -2,164 +2,95 @@
 
 ## Rules
 
-1. Terraform owns every persistent AWS resource.
-2. Application deployment and infrastructure promotion happen through GitHub
-   Actions, not from a developer laptop in normal operation.
-3. GitHub authenticates to AWS with OIDC and short-lived credentials.
-4. Development and production use separate state and deployment roles.
-5. Production requires an approved GitHub environment.
-6. Plans are reviewed before apply; drift is checked on a schedule.
-7. Secrets are populated outside Terraform values/state and referenced by ARN/name.
+1. Terraform declares every persistent AWS resource. Resources AWS created on its
+   own (the Amplify web ACL, a console-connected Amplify branch) are adopted with
+   `import` blocks, not left implicit.
+2. Deployment happens through GitHub Actions, not from a laptop.
+3. GitHub authenticates to AWS with OIDC; there are no long-lived AWS keys.
+4. Nothing deploys unless CI passed on that exact commit.
+5. Plans are visible on pull requests; drift is checked weekly.
+6. Secret values never pass through Terraform. It creates the secret
+   containers; values are written out of band and referenced by ARN.
 
 ## Layout
 
 ```text
 infrastructure/terraform/
-├── bootstrap/                 Remote state and GitHub OIDC foundation
+├── bootstrap/                 state bucket, GitHub OIDC provider, CI roles (applied once by hand)
 ├── environments/
-│   ├── dev/
-│   └── prod/
+│   ├── dev/                   the live environment
+│   └── prod/                  reserved; no resources yet
 └── modules/
-    ├── identity/
-    ├── web/
-    ├── api/
-    ├── data/
-    ├── ingestion/
-    ├── forecasting/
-    ├── notifications/
-    ├── ai/
-    └── observability/
+    ├── observability-baseline/   SNS alerts, budget, cost anomaly monitor
+    ├── dns/                      Route 53 hosted zone
+    ├── web/                      Amplify app and branch, data bucket, secrets, Bedrock access, domain
+    ├── strava-ingestion/         standard queue + DLQ, strava_worker, schedule, alarms
+    ├── training-sync/            FIFO queue + DLQ, training_sync, schedules, alarms
+    └── web-firewall/             WAFv2 web ACL: managed rule groups and per-IP rate limits
 ```
-
-Bootstrap is intentionally isolated because Terraform cannot use a remote backend
-before that backend exists. After initial bootstrap, state resources are rarely
-changed.
 
 ## State
 
-- S3 backend with versioning, encryption, public-access block, and restricted IAM.
-- Terraform native S3 locking or a lock table depending on the selected Terraform
-  version/backend configuration.
-- Unique state key and preferably unique account per environment.
-- State access limited to CI plan/apply roles and break-glass administrators.
-- Sensitive values are never deliberately passed through Terraform.
+- **S3 backend** with native lock files (`use_lockfile`).
+- **The state bucket:** versioned, AES-256 encrypted, public access blocked,
+  TLS-only, and protected from deletion.
+- **One state key per environment.**
+- **State access:** only the CI roles and administrators.
 
-## Modules
+## Identity
 
-Modules expose small stable contracts and own cohesive resources. Avoid a single
-giant module and avoid wrapping individual AWS resources without adding policy.
+The bootstrap creates the GitHub OIDC provider and three roles:
 
-Every module must provide:
+| Role | Trusted for | Permissions |
+|---|---|---|
+| `windchaser-ci-plan` | Pull requests, `main`, both GitHub environments | `ReadOnlyAccess` plus state access |
+| `windchaser-ci-apply-development` | The `development` environment only | `PowerUserAccess`, IAM limited to `windchaser-*` |
+| `windchaser-ci-apply-production` | The `production` environment only | The same, for production |
 
-- required tags;
-- encryption defaults;
-- logging/retention controls;
-- cost-relevant parameters;
-- least-privilege policy inputs;
-- useful non-sensitive outputs;
-- validation and examples where non-obvious.
+Guardrails stop either apply role from changing the bootstrap roles, the OIDC
+provider or the state bucket's protection.
 
-## Artifact deployment
+## Artifacts
 
-Terraform creates deployment destinations and references immutable artifact IDs.
-CI builds artifacts once per commit:
-
-- Next.js artifact or Amplify-connected Git commit;
-- Lambda ZIPs identified by SHA-256;
-- Agent/MCP container images tagged by Git SHA and digest;
-- schema and fixture bundles versioned by Git SHA.
-
-Production promotes the same tested artifact digest rather than rebuilding source.
-
-## GitHub environments
-
-```text
-pull-request   no write credentials; read-only plan role
-development    automatic/limited apply role after merge
-production     protected apply role with reviewer approval
-```
-
-OIDC trust conditions must restrict:
-
-- GitHub organization and repository;
-- branch, tag, or environment subject;
-- expected audience;
-- role session duration.
+- **Lambda packages** are zipped from `services/` and
+  `packages/cycling-analytics` by Terraform's `archive_file`. A Python change
+  ships with `terraform apply`.
+- **The web app** is built by Amplify from the commit CI tested, using
+  `amplify.yml`. Amplify does not expose environment variables to the
+  server runtime, so the build writes an allowlist of them into
+  `.env.production` (names and ARNs only).
 
 ## Workflows
 
-### `ci.yml`
+```mermaid
+flowchart LR
+  pr[Pull request] --> ci[CI]
+  pr --> plan[terraform-plan<br/>comment on the PR]
+  merge[Push to main] --> ci2[CI]
+  ci2 -- passed --> apply[terraform apply]
+  apply --> build[Amplify build<br/>of that commit]
+  build --> smoke[Smoke tests<br/>windchaser.io]
+  cron[Mondays] --> drift[Drift plan]
+```
 
-- install pinned toolchains;
-- install Python and dependencies with `uv sync --locked --all-groups`;
-- lint, format, type-check, and test application code;
-- validate schemas;
-- build the web application;
-- run fixture-based browser smoke tests;
-- upload test reports.
+| Workflow | Trigger | Steps |
+|---|---|---|
+| `ci.yml` | Pull requests and pushes to `main` | Rejects committed `.env`, state, plans and keys; checks that the core docs exist; `terraform fmt` and `validate` on every root; Python suites and a TypeScript/Python physics parity check; web typecheck, lint, vitest and build |
+| `terraform-plan.yml` | Pull requests touching Terraform | Assumes the plan role, plans against the dev backend, and posts the plan as one comment updated on each push |
+| `deploy-dev.yml` | CI completing on `main` (only if it passed), or manual | Assumes the development apply role and runs `terraform apply`. Then it starts the Amplify build of the tested commit and waits for it, and smoke-tests windchaser.io (`scripts/smoke_test.sh`: health, both sections render with data, heatmap and performance APIs answer) |
+| `deploy-prod.yml` | Tags `v*`, or manual | The same apply against production, which has no resources yet |
+| `drift.yml` | Mondays, or manual | `terraform plan -detailed-exitcode` with the plan role; a non-zero exit flags changes made outside Terraform |
 
-### `terraform-plan.yml`
-
-- Terraform fmt and validate;
-- TFLint and security scan;
-- assume read-only/plan AWS role through OIDC;
-- create plan for the targeted environment;
-- publish a redacted plan artifact and PR summary.
-
-### `deploy-dev.yml`
-
-- triggered after merge to `main`;
-- build and publish immutable artifacts;
-- assume dev apply role;
-- apply reviewed Terraform configuration;
-- run deployed smoke/contract tests;
-- report environment URL and release SHA.
-
-### `deploy-prod.yml`
-
-- triggered by version tag or workflow dispatch;
-- production environment approval;
-- verify artifact provenance and source SHA;
-- plan and apply production Terraform;
-- run canary and smoke checks;
-- create GitHub release notes.
-
-### `drift.yml`
-
-- scheduled weekly and manually runnable;
-- read-only plan with detailed exit code;
-- opens or updates an issue when drift exists;
-- never auto-applies drift.
-
-## Branch and release policy
-
-- Short-lived feature branches.
-- Required pull-request checks and review.
-- `main` is deployable and maps to development.
-- Semantic version tags promote tested commits to production.
-- Conventional commits are optional; generated release notes are required.
-- Database/event schema changes are backward compatible across one deployment
-  window.
-
-## Terraform coverage gaps
-
-New AgentCore or messaging features may occasionally arrive before first-class AWS
-provider resources. The order of preference is:
-
-1. Native Terraform AWS provider resource.
-2. Terraform AWS Cloud Control provider resource.
-3. A narrow, idempotent deployment adapter invoked by CI with explicit read/update/
-   delete behavior and state recorded as data.
-
-Any adapter must have an ADR, tests, least-privilege role, drift check, and a ticket
-to replace it when provider support becomes available. Console-only creation is not
-an acceptable steady state.
+Amplify's auto-build is off for dev (`enable_auto_build = false`). Builds
+start only from the deploy workflow, so a web change that failed CI never ships.
 
 ## Rollback
 
-- Application artifacts are immutable and previous digests remain deployable.
-- Lambda aliases or configuration allow rapid code rollback.
-- AgentCore versions/endpoints support controlled promotion.
-- Terraform rollback means applying a reviewed prior configuration, not editing
-  state or running destructive reset commands.
-- Data migrations are expand/contract and independently reversible where possible.
+- **Code:** revert the commit on `main`. CI, apply, build and the smoke tests
+  run again for the reverted state.
+- **Web:** Amplify keeps previous builds, so an earlier one can be redeployed
+  while a revert is in review.
+- **Data:** application data is versioned in S3. Earlier versions of any JSON
+  object can be restored.
+- **Never** edit state or run destructive resets; Terraform rollback means
+  applying a reviewed earlier configuration.

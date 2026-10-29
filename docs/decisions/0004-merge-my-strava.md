@@ -65,4 +65,4 @@ application serving both purposes.
   discretionary gate and smaller backfill batches keep WindChaser's calls first.
 - Historical activity data is rebuilt from Strava by the worker rather than
   imported, so no personal data passes through this public repository.
-- PROJECT_PLAN phase 5's one-time `my-strava` import adapter is no longer needed.
+- No one-time `my-strava` import adapter is needed.

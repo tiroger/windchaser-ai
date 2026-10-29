@@ -11,9 +11,8 @@ environments/prod/  Production composition and variables
 modules/            Shared infrastructure modules
 ```
 
-The environment roots intentionally begin with no AWS resources. Modules will be
-introduced incrementally by the vertical slices in the project plan. This prevents
-an expensive empty platform from being deployed before the application needs it.
+Modules are added only when the application needs them, so no idle platform is
+deployed ahead of use. The prod root declares no resources yet.
 
 ## Planned module order
 

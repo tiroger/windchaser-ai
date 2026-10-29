@@ -42,7 +42,6 @@ jobs:
         run: |
           set -euo pipefail
           test -f README.md
-          test -f docs/PROJECT_PLAN.md
           test -f docs/architecture/AWS_ARCHITECTURE.md
           test -f docs/architecture/COST_STRATEGY.md
           test -f docs/architecture/TERRAFORM_AND_CICD.md

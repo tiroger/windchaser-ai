@@ -17,7 +17,8 @@ export async function GET() {
 
   const env = {
     STRAVA_SECRET_ARN: Boolean(process.env.STRAVA_SECRET_ARN),
-    APP_DATA_BUCKET: process.env.APP_DATA_BUCKET ?? null,
+    // The bucket name carries the account id, so presence only.
+    APP_DATA_BUCKET: Boolean(process.env.APP_DATA_BUCKET),
     CALIBRATION_S3_KEY: process.env.CALIBRATION_S3_KEY ?? null,
     LIVE_AI_ENABLED: process.env.LIVE_AI_ENABLED ?? null,
     AWS_REGION: process.env.AWS_REGION ?? null,
@@ -75,16 +76,10 @@ export async function GET() {
         segments: Object.keys(table).length,
         with_fitted_power: fitted,
         // Everything else falls back to this, so its absence is the difference
-        // between honest probabilities and optimistic ones.
-        rider_model: rider
-          ? {
-              cp_w: rider.cp_w,
-              w_prime_j: rider.w_prime_j,
-              grade_w: rider.grade_w,
-              mass_kg: rider.mass_kg,
-              cda: rider.cda,
-            }
-          : null,
+        // between honest probabilities and optimistic ones. Whether it loaded is
+        // operational; its parameters (the rider's mass among them) are personal
+        // and stay off this public endpoint.
+        rider_model: Boolean(rider),
       },
       // Null until this container has made a Strava call.
       strava_quota: rateLimitState(),

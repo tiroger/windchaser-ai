@@ -3,9 +3,8 @@
 # Strava requires the callback to answer within a couple of seconds and retries
 # on failure, so the endpoint validates, enqueues, and returns. Everything that
 # might be slow -- fetching the activity, matching efforts, comparing against
-# the prediction -- happens off this queue. That is the shape section 5 of the
-# project plan asks for, and it is also the only way to stay inside the window
-# when Strava's own API is the thing being slow.
+# the prediction -- happens off this queue. It is the only way to stay inside
+# the window when Strava's own API is the thing being slow.
 
 locals {
   name = "windchaser-${var.environment}-strava-events"

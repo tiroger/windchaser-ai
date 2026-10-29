@@ -189,7 +189,7 @@ export default function Page() {
     //
     // Restricting it is not a trick to get a prettier picture. These are the
     // segments where the score means something: power fitted from attempts on
-    // that road, backtested at 52s of error against 82s for the rider model.
+    // that road, backtested at 52s of error against 83s for the rider model.
     const trusted = segments.filter((s) => s.calibrated_power_w);
     const contributing = trusted.length > 0 ? trusted : segments;
     const ids = new Set(contributing.map((s) => s.id));

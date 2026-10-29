@@ -13,9 +13,9 @@ const API = "https://www.strava.com/api/v3";
  * returns a nearly empty list while still reporting it as live data.
  */
 /**
- * Strava reports quota on every response as "fifteenMinute,daily" pairs. Section
- * 5 of the project plan asks for rate-limit accounting, not just backoff, and
- * the difference matters: backoff handles being refused, accounting stops us
+ * Strava reports quota on every response as "fifteenMinute,daily" pairs. This
+ * keeps accounts rather than only backing off, and the difference matters:
+ * backoff handles being refused, accounting stops us
  * spending the day's budget on work nobody asked for.
  *
  * A full starred refresh costs one call per segment, so a couple of refreshes

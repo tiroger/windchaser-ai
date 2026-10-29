@@ -1,9 +1,8 @@
 # Provider credentials.
 #
-# Terraform creates the container and never the contents. Section 11 of the
-# project plan is explicit: no secrets in Terraform variables, state, outputs,
-# logs or fixtures. The value is written once with the AWS CLI, and rotating it
-# later touches nothing here.
+# Terraform creates the container and never the contents: no secrets in
+# Terraform variables, state, outputs, logs or fixtures. The value is written
+# once with the AWS CLI, and rotating it later touches nothing here.
 #
 # A single secret holding a JSON document rather than three separate secrets:
 # Secrets Manager bills per secret, and these three are always read together.

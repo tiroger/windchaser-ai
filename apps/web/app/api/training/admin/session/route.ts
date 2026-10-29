@@ -6,6 +6,7 @@ import {
   ownerModeActive,
   verifyAdminPassphrase,
 } from "@/lib/training/admin-session";
+import { RateLimiter } from "@/lib/server/rate-limit";
 import { sameOrigin } from "@/lib/training/security";
 
 export const runtime = "nodejs";
@@ -17,6 +18,13 @@ export const dynamic = "force-dynamic";
  * keeps the cookie off them, and the Sec-Fetch-Site check stops a page
  * elsewhere from even attempting a passphrase guess through a visitor.
  */
+/**
+ * Passphrase attempts per compute instance per 15 minutes, whoever sends them.
+ * The owner signs in a few times a day; this caps guessing behind the WAF's
+ * per-address rate rule, which is the limit that sees real client addresses.
+ */
+const attempts = new RateLimiter(20, 15 * 60 * 1000);
+
 export async function GET() {
   return NextResponse.json({ authenticated: await ownerModeActive() });
 }
@@ -24,6 +32,13 @@ export async function GET() {
 export async function POST(request: Request) {
   if (!sameOrigin(request)) {
     return NextResponse.json({ error: "Same-origin request required" }, { status: 403 });
+  }
+  const allowed = attempts.take("passphrase");
+  if (!allowed.ok) {
+    return NextResponse.json(
+      { error: "Too many attempts; try again later" },
+      { status: 429, headers: { "Retry-After": String(allowed.retryAfterSeconds) } },
+    );
   }
 
   let passphrase: unknown;

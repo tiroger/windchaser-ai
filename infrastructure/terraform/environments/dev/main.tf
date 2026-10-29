@@ -67,6 +67,11 @@ module "web" {
   # and reasserts the compute platform the console reset.
   repository_connected = true
 
+  # The deploy workflow starts each build once CI has passed and Terraform has
+  # applied, then smoke-tests it. Auto-build would race both and ship web
+  # changes that failed CI.
+  enable_auto_build = false
+
   # Turns on the generated briefing. Off means the deterministic template, which
   # is the ADR-0002 fallback and stays correct either way. Generation is cached
   # by evidence hash, so this costs a handful of calls a day rather than one per

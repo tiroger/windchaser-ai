@@ -20,8 +20,8 @@ conditions, which decorrelates power from wind. This script assembles that data:
 Weather is fetched once per grid cell per calendar month rather than once per
 effort, which keeps the request count in the dozens instead of the hundreds.
 
-Output feeds the prediction evolution staged in section 9 of the project plan:
-a physics baseline calibrated on efforts, then a learned model of the residual.
+Output feeds the calibration: a physics baseline fitted to these efforts in
+their real weather.
 """
 
 from __future__ import annotations

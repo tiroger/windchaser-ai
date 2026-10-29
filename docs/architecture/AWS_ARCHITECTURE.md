@@ -2,150 +2,123 @@
 
 ## Design intent
 
-WindChaser uses a serverless, event-driven AWS architecture to minimize idle cost
-while retaining the components expected in a production AI application. The
-deterministic opportunity pipeline and the interactive Bedrock agent are separate
-failure and cost domains.
+- **Serverless and scale-to-zero:** nothing runs while nobody is riding or reading.
+- **Numbers from code, words from the model:** forecasts, predictions and
+  training metrics come from deterministic code and fitted models. Claude explains
+  and retrieves; it never supplies a number
+  ([ADR-0002](../decisions/0002-deterministic-alert-core.md)).
+- **One Strava application:** one webhook, one rotating refresh token and one rate
+  limit, shared by two workers that write disjoint data
+  ([ADR-0004](../decisions/0004-merge-my-strava.md)).
+- **Degrade, don't fail:** every external dependency has a fallback that keeps the
+  site useful.
 
 ## Context
 
 ```mermaid
 flowchart LR
-    Rider["Rider"] --> Web["React / Next.js web app"]
-    Strava["Strava API and webhooks"] --> AWS["WindChaser on AWS"]
-    Weather["Weather provider"] --> AWS
-    AWS --> SMS["AWS End User Messaging SMS"]
-    SMS --> Rider
-    Web --> AWS
+  rider([Rider]) --> site[windchaser.io]
+  strava[(Strava API + webhook)] <--> site
+  meteo[(Open-Meteo forecast<br/>and ERA5 archive)] --> site
+  site --> bedrock[Amazon Bedrock · Claude]
 ```
 
-## Logical architecture
+## Components
 
 ```mermaid
-flowchart TD
-    Browser["Next.js web app"] --> Amplify["Amplify Hosting"]
-    Browser --> Cognito["Amazon Cognito"]
-    Browser --> HttpApi["API Gateway HTTP API"]
-
-    HttpApi --> ApiLambda["API Lambda"]
-    HttpApi --> WebhookLambda["Strava webhook Lambda"]
-    WebhookLambda --> EventQueue["Webhook SQS + DLQ"]
-    EventQueue --> StravaWorker["Strava sync Lambda"]
-
-    Scheduler["EventBridge Scheduler"] --> ForecastFlow["Step Functions forecast workflow"]
-    ForecastFlow --> WeatherWorker["Weather Lambda"]
-    ForecastFlow --> OpportunityWorker["Opportunity Lambda"]
-    OpportunityWorker --> AlertQueue["Alert SQS + DLQ"]
-    AlertQueue --> NotificationWorker["Notification Lambda"]
-    NotificationWorker --> SMS["AWS End User Messaging SMS"]
-
-    ApiLambda --> DDB["DynamoDB application table"]
-    StravaWorker --> DDB
-    WeatherWorker --> DDB
-    OpportunityWorker --> DDB
-    ApiLambda --> S3["S3 artifacts and fixtures"]
-
-    ApiLambda --> AgentRuntime["Bedrock AgentCore Runtime"]
-    AgentRuntime --> Bedrock["Amazon Bedrock"]
-    AgentRuntime --> Gateway["AgentCore Gateway / MCP"]
-    Gateway --> StravaMcp["Strava MCP"]
-    Gateway --> WeatherMcp["Weather MCP"]
-    Gateway --> OpportunityMcp["Opportunity MCP"]
-    Gateway --> NotificationMcp["Notification MCP"]
-
-    Secrets["Secrets Manager + KMS"] --> StravaWorker
-    Secrets --> NotificationWorker
-
-    Observability["CloudWatch, X-Ray, budgets"] -.-> ApiLambda
-    Observability -.-> ForecastFlow
-    Observability -.-> AgentRuntime
+flowchart TB
+  subgraph edge[Edge]
+    r53[Route 53] --> waf[WAF: managed rules + per-IP rate limits]
+  end
+  subgraph web[Amplify Hosting · Next.js SSR]
+    pages[Pages] --- api[API routes]
+  end
+  subgraph async[Ingestion]
+    q1[[SQS strava-events + DLQ]] --> w1[Lambda strava_worker]
+    q2[[SQS training-events.fifo + DLQ]] --> w2[Lambda training_sync]
+    eb[EventBridge] --> w1
+    eb --> q2
+  end
+  s3[(S3 data bucket)]
+  sm[(Secrets Manager)]
+  bedrock[Bedrock]
+  waf --> web
+  api --> q1 & q2
+  api & w1 & w2 --> s3
+  api & w1 & w2 --> sm
+  api --> bedrock
 ```
+
+| Component | Role |
+|---|---|
+| Amplify Hosting (`WEB_COMPUTE`) | Renders the pages and serves the API routes. Reads S3 JSON through an ETag-validated in-memory cache. |
+| `strava_worker` (Lambda, 2 GB, reserved concurrency 1) | Segment efforts: ingests webhook events, re-reads tracked segments, attaches ERA5 weather once the archive covers an effort, rebuilds `calibration.json` daily. |
+| `training_sync` (Lambda, arm64, 256 MB) | Activities, detail streams, gear and saved routes; computes exercise load and the VO2max signal from full-resolution streams. |
+| SQS standard and FIFO | Absorb webhook bursts and retries. The FIFO group `strava-events` serialises training writes; reserved concurrency serialises `strava_worker`'s. |
+| EventBridge | Daily calibration refresh; daily reconciliation and hourly streams backfill for training. |
+| S3 | Versioned application data: one JSON object per dataset plus per-activity streams and per-route profiles. |
+| Secrets Manager | `windchaser/{env}/strava` (rotated by both workers) and `windchaser/{env}/web` (owner mode). |
+| Bedrock | The wind briefing and the Ask agent, through the Bedrock Mantle endpoint. |
+| CloudWatch, SNS, Budgets | Error, dead-letter and queue-age alarms; monthly budget and cost anomaly alerts; all emailed. |
 
 ## Request paths
 
-### Public demo
+### Wind view
 
-The public site loads pre-generated, sanitized JSON fixtures from the web build or
-S3/CloudFront cache. It does not call Strava, weather, Bedrock, AgentCore, or SMS.
-This keeps portfolio traffic predictable and almost free.
+1. The browser asks for its position, then `GET /api/opportunities`.
+2. The route resolves the segments and fetches the 7-day forecast once per 0.1°
+   cell (Open-Meteo, cached 30 minutes).
+   - **Segments:** starred segments plus ones discovered near the rider.
+   - **Calibration:** applied from `calibration.json`.
+   - **Fallback:** if Strava or the forecast is unavailable, the response uses
+     the saved bundle in S3, and says so.
+3. The browser evaluates every segment against every forecast hour with the
+   physics model and ranks the windows.
+4. `POST /api/briefing` sends the top five as evidence.
+   - Claude writes the briefing, cached by a hash of that evidence.
+   - If the model fails or the per-instance call budget is spent, a
+     deterministic template answers instead.
 
-### Authenticated dashboard
+### Ride to data
 
-The browser obtains Cognito tokens and calls an API Gateway HTTP API. Lambda reads
-precomputed opportunities from DynamoDB. It does not calculate forecasts in the
-request path. This produces fast pages and avoids request-time fan-out.
+1. Strava posts to `/api/strava/webhook`. The route checks the subscription and
+   acknowledges at once.
+2. It enqueues the event on the standard queue, and the owner's activity events
+   on the FIFO queue.
+3. The workers process the events.
+   - Both re-fetch the event from the Strava API rather than trusting the body.
+   - Each writes only its own S3 keys.
+   - Discretionary work stops at 80% of the daily read allowance shared by both.
 
-### Forecast sweep
+### Training pages
 
-EventBridge starts a Step Functions workflow on a coarse schedule. It selects due
-segments, groups/caches weather requests, calculates opportunity windows, and emits
-only qualifying notification events. A more frequent schedule may be activated for
-the final hours before a promising window.
+Server components read the S3 JSON and compute metrics. Responses carrying
+coordinates hide the first and last 500 m of every route.
 
-### SMS alert
+### Owner writes and Ask
 
-The opportunity engine writes an idempotency record and sends an event to SQS. The
-notification worker checks consent, suppression, cooldown, quiet hours, and
-forecast version before sending. Delivery events update the notification record and
-metrics.
+- **Owner mode:** a passphrase is exchanged for an HMAC-signed `HttpOnly`,
+  `SameSite=Strict` cookie. Writes also require `Sec-Fetch-Site: same-origin`
+  and are conditional on the version read.
+- **Ask:** streams a Claude tool-use loop as server-sent events.
+  - Tools are read-only.
+  - Each answer is capped at 8 rounds and 120 s.
+  - Per-session and per-instance rate limits apply.
 
-### Copilot
+## Environments
 
-The authenticated API starts or resumes an AgentCore session. The Strands agent
-uses a Bedrock model and discovers authorized tools through AgentCore Gateway. Tool
-results contain the numerical evidence; the model synthesizes an explanation. The
-UI receives a streamed answer and a sanitized trace.
-
-## Environment strategy
-
-### Development
-
-- One low-cost AWS environment.
-- Owner-only Strava account and verified SMS destination.
-- Short log retention and low spending limits.
-- Fixture/replay mode enabled by default.
-- Optional AgentCore deployment that can be disabled when not being demonstrated.
-
-### Production
-
-- Separate Terraform state and IAM deployment role.
-- Public demo plus authenticated owner workflow initially.
-- Registered SMS origination identity before broader user onboarding.
-- Protected GitHub environment approval.
-- Longer but still bounded operational retention.
-
-Separate AWS accounts are ideal. If a single account is used for a portfolio MVP,
-resource names, state, KMS keys, roles, and budgets remain environment-specific.
-
-## Resource selection rationale
-
-| Need | Choice | Reason |
-|---|---|---|
-| Web hosting | Amplify Hosting | Managed Next.js deployment, CDN, preview support |
-| Browser API | API Gateway HTTP API | Lower cost and simpler than REST API for required features |
-| Compute | Lambda | No idle cost; workloads are short and event-driven |
-| Orchestration | Step Functions Standard initially | Visible durable workflows; evaluate Express after measuring volume |
-| Queueing | SQS | Retry isolation, buffering, DLQ support |
-| Operational data | DynamoDB on-demand | Scale-to-zero-like usage economics and simple access patterns |
-| Artifacts | S3 | Inexpensive durable storage and lifecycle controls |
-| Authentication | Cognito | AWS-native user identity and JWT integration |
-| Secrets | Secrets Manager | Rotation-ready secret storage; minimize number of secrets |
-| Model | Bedrock | Managed model access and evaluation/guardrail ecosystem |
-| Agent runtime | AgentCore Runtime | Managed agent sessions, identity, deployment, and observability |
-| MCP gateway | AgentCore Gateway | Governed tool discovery and invocation |
-| SMS | End User Messaging SMS | Native AWS transactional delivery and status reporting |
-| IaC | Terraform | Requested portable declarative infrastructure |
+- **dev:** the live environment at windchaser.io, in one AWS account.
+  - Every resource, IAM role and budget is named and tagged per environment.
+- **prod:** a separate Terraform root, apply role and protected GitHub environment
+  exist, but it declares no resources yet.
 
 ## Boundaries and degradation
 
-- If Bedrock or AgentCore fails, scheduled scores and SMS can still run using a
-  deterministic message template.
-- If Strava fails, cached segment geometry remains usable; new effort analysis is
-  delayed.
-- If weather fails, no new alert is sent unless minimum coverage and freshness are
-  satisfied.
-- If SMS fails, the opportunity remains visible in-app and delivery is retried
-  through SQS within policy limits.
-- Provider adapters expose normalized contracts so weather or map vendors can be
-  replaced without changing the opportunity engine.
+| Failure | What still works |
+|---|---|
+| Strava down or rate-limited | Saved segment bundle and stored history; webhook events wait in SQS and retry. |
+| Forecast unavailable for a cell | That cell falls back to the saved bundle; other cells stay live. |
+| Bedrock and the Anthropic API unavailable | Template briefing; Ask reports that it is unavailable. |
+| A worker keeps failing | Messages move to the dead-letter queue after 5 attempts and an alarm fires; nothing is written from a failed run. |
+| ERA5 not yet covering an effort | The effort is held without weather and excluded from fitting until the archive catches up. |
 

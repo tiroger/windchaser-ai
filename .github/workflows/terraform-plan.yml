@@ -65,4 +65,41 @@ jobs:
             -backend-config="encrypt=true" \
             -backend-config="use_lockfile=true"
           terraform plan -no-color -out=tfplan
+          terraform show -no-color tfplan > plan.txt
+
+      # One comment per pull request, replaced on every push, so reviewers read
+      # the plan beside the diff rather than in the job log.
+      - name: Post the plan on the pull request
+        if: ${{ github.event_name == 'pull_request' && vars.TERRAFORM_STATE_BUCKET != '' && vars.AWS_TERRAFORM_PLAN_ROLE_ARN != '' }}
+        uses: actions/github-script@v7
+        env:
+          PLAN_PATH: infrastructure/terraform/environments/${{ env.ENVIRONMENT }}/plan.txt
+        with:
+          script: |
+            const fs = require("fs");
+            const marker = "<!-- terraform-plan:" + process.env.ENVIRONMENT + " -->";
+            let plan = fs.readFileSync(process.env.PLAN_PATH, "utf8");
+            const summary = (plan.match(/^(Plan:.*|No changes\..*)$/m) || ["(no summary line)"])[0];
+            const limit = 60000;
+            if (plan.length > limit) plan = plan.slice(0, limit) + "\n... truncated; see the job log for the full plan.";
+            const body = [
+              marker,
+              "### Terraform plan · `" + process.env.ENVIRONMENT + "`",
+              "**" + summary + "**",
+              "<details><summary>Full plan</summary>",
+              "",
+              "```hcl",
+              plan,
+              "```",
+              "</details>",
+            ].join("\n");
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
+            const existing = comments.find((c) => c.body && c.body.startsWith(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
 
