@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 
 from cycling_analytics.calibration import build_calibration
 
-from . import store, strava, weather
+from . import segment_usage, store, strava, weather
 from .strava import RateLimited, Unavailable, activity
 
 EFFORTS_KEY = os.environ.get("EFFORTS_S3_KEY", "efforts.json")
@@ -32,6 +32,12 @@ CALIBRATION_KEY = os.environ.get("CALIBRATION_S3_KEY", "calibration.json")
 # segments the rider actually sees, which is what makes a segment worth the
 # quota to learn about.
 BUNDLE_KEY = os.environ.get("BUNDLE_S3_KEY", "opportunities.json")
+# How often the rider rides every segment, tracked or not. See segment_usage.
+USAGE_KEY = os.environ.get("SEGMENT_USAGE_S3_KEY", "segment-usage.json")
+
+# Rides on an untracked segment, counted from ingested activities, before it is
+# worth a backfill. One ride is a route taken once; three is a habit.
+MIN_USAGE_COUNT = 3
 
 CELL_DEG = 0.1
 
@@ -71,8 +77,13 @@ def _record(effort: dict, segment: dict, activity_id: int) -> dict:
     }
 
 
-def apply_event(body: dict, payload: dict) -> int:
-    """Fold one webhook event into the history. Returns efforts added or removed."""
+def apply_event(body: dict, payload: dict, usage: dict | None = None) -> int:
+    """Fold one webhook event into the history. Returns efforts added or removed.
+
+    With a usage object, every effort in the activity is also counted there,
+    tracked segment or not, from the same activity detail: usage costs no
+    Strava read of its own. Without one, only the history changes.
+    """
     if body.get("object_type") != "activity":
         return 0
 
@@ -82,6 +93,8 @@ def apply_event(body: dict, payload: dict) -> int:
         return 0
 
     if aspect == "delete":
+        if usage is not None:
+            segment_usage.forget(usage, activity_id)
         before = len(payload["efforts"])
         payload["efforts"] = [
             e for e in payload["efforts"] if e.get("activity_id") != activity_id
@@ -108,8 +121,8 @@ def apply_event(body: dict, payload: dict) -> int:
         # Only segments the history already tracks. An activity can touch dozens
         # of segments nobody asked about, and each new one would cost further
         # Strava calls for its geometry and elevation against a daily read quota
-        # that this rider already exhausts. Adding segments stays an explicit
-        # act, through scripts/fetch_effort_history.py.
+        # that this rider already exhausts. Untracked segments are only counted,
+        # in usage below; the refresh adds the frequently ridden ones one per run.
         if sid not in known:
             continue
         if effort.get("id") in seen:
@@ -119,30 +132,68 @@ def apply_event(body: dict, payload: dict) -> int:
         payload["efforts"].append(_record(effort, known[sid], activity_id))
         added += 1
 
+    counted = ""
+    if usage is not None:
+        counted = f", {segment_usage.record(usage, activity_id, efforts)} counted as usage"
+
     print(
         f"[ingest] activity {activity_id}: {len(efforts)} efforts, "
-        f"{added} on tracked segments"
+        f"{added} on tracked segments{counted}"
     )
     return added
 
 
-def backfill_candidate(payload: dict, bundle: dict) -> dict | None:
+def backfill_candidate(
+    payload: dict, bundle: dict, usage: dict | None = None
+) -> dict | None:
     """The untracked segment worth learning about next.
 
     Ranked by how often the rider has ridden it, because that is both the most
     evidence per call and the strongest signal that they care about the segment.
     Segments they have never ridden are skipped: there is no history to fetch,
     and no record to compare a prediction against either.
+
+    Two sources. The bundle's segments are the ones the rider sees, and come
+    with geometry. Usage holds every segment ingested rides crossed, so a climb
+    ridden every week is found even if no bundle ever showed it; those need
+    MIN_USAGE_COUNT rides and their geometry fetched. Ties go to the segment
+    ridden most recently.
     """
-    known = set(payload.get("segments") or {})
-    candidates = [
-        s
-        for s in (bundle.get("segments") or [])
-        if str(s.get("id")) not in known and (s.get("effort_count_personal") or 0) > 0
-    ]
-    if not candidates:
+    # Segments Strava would not describe are passed over, or the same refused
+    # candidate would come round every run and block every other one.
+    known = set(payload.get("segments") or {}) | set(payload.get("undescribed_segments") or {})
+    counted = (usage or {}).get("segments") or {}
+    bundled = {str(s.get("id")): s for s in bundle.get("segments") or []}
+    ranked: dict[str, tuple[tuple[int, str], dict]] = {}
+
+    for sid, s in bundled.items():
+        if sid in known or (s.get("effort_count_personal") or 0) <= 0:
+            continue
+        seen = counted.get(sid) or {}
+        rank = (
+            max(s.get("effort_count_personal") or 0, seen.get("count") or 0),
+            seen.get("last_ridden") or "",
+        )
+        ranked[sid] = (rank, s)
+
+    for sid, seen in counted.items():
+        if sid in known or (seen.get("count") or 0) < MIN_USAGE_COUNT:
+            continue
+        if sid in ranked:
+            continue  # the bundle's entry already carries its count and geometry
+        # A bundle entry with no personal count (an older bundle) still has the
+        # geometry worth reusing; otherwise backfill_segment fetches it.
+        candidate = bundled.get(sid) or {
+            "id": seen.get("id") or int(sid),
+            "name": seen.get("name"),
+            "distance_m": seen.get("distance_m"),
+            "average_grade": seen.get("average_grade"),
+        }
+        ranked[sid] = ((seen.get("count") or 0, seen.get("last_ridden") or ""), candidate)
+
+    if not ranked:
         return None
-    return max(candidates, key=lambda s: s.get("effort_count_personal") or 0)
+    return max(ranked.values(), key=lambda pair: pair[0])[1]
 
 
 def backfill_profiles(payload: dict, bundle: dict, limit: int) -> int:
@@ -202,6 +253,44 @@ def backfill_profiles(payload: dict, bundle: dict, limit: int) -> int:
     return added
 
 
+def _segment_detail(payload: dict, segment: dict) -> dict | None:
+    """The candidate with geometry and figures from Strava's segment detail.
+
+    None when Strava refuses or describes no line; the caller records nothing,
+    because a segment that cannot be drawn or placed in a weather cell is no
+    use to the application or the calibration. A refusal that will not change
+    (a private or deleted segment) or a missing line is remembered in
+    `undescribed_segments`, so backfill_candidate moves on to the next one; a
+    rate limit is not, since it says nothing about the segment.
+    """
+    name = segment.get("name")
+    try:
+        detail = strava.segment(int(segment["id"]))
+    except RateLimited as exc:
+        print(f"[backfill] {name}: no segment detail ({exc})")
+        return None
+    except Unavailable as exc:
+        print(f"[backfill] {name}: no segment detail ({exc}); not asking again")
+        payload.setdefault("undescribed_segments", {})[str(segment["id"])] = _now()
+        return None
+    shape = detail.get("map") or {}
+    line = shape.get("polyline") or shape.get("summary_polyline")
+    points = strava.simplify(strava.decode_polyline(line)) if line else []
+    if len(points) < 2:
+        print(f"[backfill] {name}: Strava describes no line, recording nothing")
+        payload.setdefault("undescribed_segments", {})[str(segment["id"])] = _now()
+        return None
+    stats = detail.get("athlete_segment_stats") or {}
+    return {
+        **segment,
+        "name": detail.get("name") or name,
+        "distance_m": detail.get("distance", segment.get("distance_m")),
+        "average_grade": detail.get("average_grade", segment.get("average_grade")),
+        "pr_elapsed_time": stats.get("pr_elapsed_time"),
+        "points": points,
+    }
+
+
 def backfill_segment(payload: dict, segment: dict) -> int:
     """Pull one segment's effort history into the store. Returns efforts added.
 
@@ -209,8 +298,16 @@ def backfill_segment(payload: dict, segment: dict) -> int:
     per run. Coverage fills in over a fortnight instead of spiking a daily
     allowance this rider already spends, and every segment added moves from the
     rider-level model at 83s mean error to its own fit at 52s.
+
+    A segment known only from usage has no geometry, so its detail is fetched
+    first: one more call, and spent before the effort history so that a
+    segment Strava will not describe costs one read rather than several.
     """
     segment_id = int(segment["id"])
+    if len((segment.get("points") or [])) < 2:
+        segment = _segment_detail(payload, segment)
+        if segment is None:
+            return 0
     efforts = strava.all_efforts(segment_id)
     usable = [e for e in efforts if e.get("elapsed_time") and e.get("start_date")]
     if not usable:
@@ -329,6 +426,10 @@ def ingest(event, _context=None):
     """SQS entry point. One event per invocation; see the reserved concurrency."""
     records = event.get("Records") or []
     payload = store.load(EFFORTS_KEY)
+    # Loaded once and tolerantly: None means usage is skipped this invocation,
+    # never that the efforts are.
+    usage = segment_usage.load(USAGE_KEY)
+    usage_before = segment_usage.fingerprint(usage)
 
     changed = 0
     for record in records:
@@ -348,7 +449,19 @@ def ingest(event, _context=None):
         if not isinstance(body, dict) or "object_type" not in body:
             print(f"[ingest] ignoring a message that is not a Strava event: {record.get('body')!r}")
             continue
-        changed += apply_event(body, payload)
+        changed += apply_event(body, payload, usage)
+
+    # Usage first and efforts last. A failed usage write is logged and dropped,
+    # so it cannot cost the efforts; a failed efforts write still fails the
+    # message, and the retry finds this activity already counted in usage.
+    usage_changed = usage is not None and segment_usage.fingerprint(usage) != usage_before
+    if usage_changed:
+        usage["generated_at"] = _now()
+        try:
+            store.save(USAGE_KEY, usage)
+        except Exception as exc:  # noqa: BLE001 - usage must never cost the efforts
+            print(f"[usage] could not save {USAGE_KEY}: {exc}")
+            usage_changed = False
 
     if changed:
         payload["effort_count"] = len(payload["efforts"])
@@ -358,7 +471,11 @@ def ingest(event, _context=None):
         )
         store.save(EFFORTS_KEY, payload)
 
-    return {"records": len(records), "efforts_changed": changed}
+    return {
+        "records": len(records),
+        "efforts_changed": changed,
+        "usage_changed": usage_changed,
+    }
 
 
 def attach_weather(payload: dict) -> int:
@@ -411,15 +528,17 @@ def refresh(_event=None, _context=None):
     # segments the rider did ask for.
     backfilled = 0
     profiles = 0
+    undescribed_before = len(payload.get("undescribed_segments") or {})
     resynced = recovered = 0
     try:
         if strava.discretionary_allowed():
             bundle = store.load(BUNDLE_KEY)
+            usage = segment_usage.load(USAGE_KEY)
             # Profiles first. They are the cheaper call and the larger gain, so
             # if the run has budget for only one of the two, this is the one
             # worth spending it on.
             profiles = backfill_profiles(payload, bundle, MAX_PROFILES_PER_RUN)
-            candidate = backfill_candidate(payload, bundle)
+            candidate = backfill_candidate(payload, bundle, usage)
             if candidate and strava.discretionary_allowed():
                 backfilled = backfill_segment(payload, candidate)
             resynced, recovered = resync_segments(payload, MAX_RESYNC_PER_RUN)
@@ -432,7 +551,9 @@ def refresh(_event=None, _context=None):
 
     attached = attach_weather(payload)
 
-    if attached or backfilled or profiles or resynced:
+    # A newly undescribed segment is saved too, or it is asked about again.
+    passed_over = len(payload.get("undescribed_segments") or {}) != undescribed_before
+    if attached or backfilled or profiles or resynced or passed_over:
         payload["effort_count"] = len(payload["efforts"])
         payload["segment_count"] = len(payload["segments"])
         payload["generated_at"] = _now()

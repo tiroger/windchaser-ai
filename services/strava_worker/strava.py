@@ -228,3 +228,51 @@ def altitude_profile(segment_id: int) -> dict | None:
     if not distance or not altitude or len(distance) != len(altitude):
         return None
     return {"distance_m": distance, "altitude_m": altitude}
+
+
+def segment(segment_id: int) -> dict:
+    """A detailed segment: its line, summary figures and the athlete's record.
+
+    Needed only for a segment known from ride summaries alone, which carry no
+    geometry. Segments taken from the saved bundle already have theirs.
+    """
+    return get(f"/segments/{segment_id}")
+
+
+def decode_polyline(encoded: str) -> list[list[float]]:
+    """Google's encoded polyline, as [lat, lon] pairs. Matches lib/server/strava.ts."""
+    points: list[list[float]] = []
+    index = lat = lon = 0
+    while index < len(encoded):
+        deltas = []
+        for _axis in (0, 1):
+            result = shift = 0
+            while True:
+                if index >= len(encoded):
+                    # Truncated mid-point: keep what decoded cleanly.
+                    return points
+                byte = ord(encoded[index]) - 63
+                index += 1
+                result |= (byte & 0x1F) << shift
+                shift += 5
+                if byte < 0x20:
+                    break
+            deltas.append(~(result >> 1) if result & 1 else result >> 1)
+        lat += deltas[0]
+        lon += deltas[1]
+        points.append([lat / 1e5, lon / 1e5])
+    return points
+
+
+def simplify(points: list, max_points: int = 240) -> list:
+    """Evenly thinned to at most max_points, keeping the last point.
+
+    The same thinning lib/server/strava.ts applies, so a segment the worker
+    adds draws exactly as one the application fetched itself.
+    """
+    if len(points) <= max_points:
+        return points
+    step = len(points) / max_points
+    out = [points[int(i * step)] for i in range(max_points)]
+    out[-1] = points[-1]
+    return out
