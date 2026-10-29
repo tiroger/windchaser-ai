@@ -273,6 +273,21 @@ count, last ridden), at no extra Strava read. The wind view uses it for
 recency, and the daily refresh backfills the most ridden untracked segment
 (three rides or more) into the tracked set, so the set grows with real riding.
 
+### Modeling experiments
+
+[`modeling/`](modeling/README.md) holds documented ML experiments as
+[marimo](https://marimo.io) notebooks, run against the same data the app uses
+and scored time-forward against production replayed:
+
+- **Learning what the physics misses**: a learned correction to segment-time
+  predictions (it does not beat the physics on future efforts) and conformal
+  intervals (they fix the hand-made σ's under-coverage).
+- **Durability and pacing**: how power falls with work done, and a W′-balance
+  pacing optimiser for saved routes, checked against recorded rides.
+
+The notebooks need private data, so CI compiles them and tests their shared
+code on synthetic data (`scripts/test_modeling.py`).
+
 ## Generative AI
 
 **Decision rule:** deterministic code computes every number; the language model
@@ -466,7 +481,7 @@ flowchart LR
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `ci.yml` | Pull requests, pushes to `main` | Rejects committed `.env`, state, plans and keys; checks Terraform formatting and validates every root; runs the Python suites (Strava worker, training sync, calibration, MCP protocol) and a TypeScript/Python physics parity check; typechecks, lints, tests (vitest) and builds the web app |
+| `ci.yml` | Pull requests, pushes to `main` | Rejects committed `.env`, state, plans and keys; checks Terraform formatting and validates every root; runs the Python suites (Strava worker, training sync, calibration, MCP protocol, modeling) and a TypeScript/Python physics parity check; typechecks, lints, tests (vitest) and builds the web app |
 | `terraform-plan.yml` | Pull requests touching Terraform | Assumes the plan role through OIDC, plans against the dev backend, and posts the plan as a comment on the pull request |
 | `deploy-dev.yml` | CI passing on `main` | Assumes the development apply role through OIDC and runs `terraform apply`; starts the Amplify build of the tested commit and waits for it; smoke-tests windchaser.io (health, both sections render with data, key APIs answer) |
 | `deploy-prod.yml` | Tags `v*` | The same against production |
@@ -519,6 +534,7 @@ apps/web/                         Next.js app: wind view, Training section, API 
   lib/server/                     forecast, calibration, Strava client, briefing
   lib/training/                   data layer, metrics, loops, route forecasting, Ask agent
 packages/cycling-analytics/       Python physics, rider model and calibration
+modeling/                         marimo notebooks for documented ML experiments
 services/strava_worker/           Lambda: segment efforts, ERA5 weather, calibration
 services/training_sync/           Lambda: activities, streams, gear, saved routes, load
 mcp/                              MCP server over stdio
@@ -539,6 +555,7 @@ uv run python scripts/test_strava_worker.py
 uv run python scripts/test_training_sync.py
 uv run python scripts/test_calibration.py
 uv run python scripts/test_mcp_server.py
+uv run python scripts/test_modeling.py
 ```
 
 **Web** (Node 22):
