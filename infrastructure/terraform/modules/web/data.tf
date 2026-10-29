@@ -1,8 +1,8 @@
 # Application data the runtime reads but that must not live in the repository.
 #
 # Calibration carries fitted power, best times and attempt dates: personal
-# training data, in a public repository. Section 8 of the project plan already
-# places large replayable objects in S3, and this is one.
+# training data, in a public repository. Large replayable objects live in S3,
+# and this is one.
 #
 # It is generated offline by scripts/build_calibration.py, which needs the full
 # effort history and reanalysis weather, so it cannot be produced at build time.

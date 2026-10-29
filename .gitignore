@@ -47,8 +47,8 @@ tmp/
 .strava-refresh-token
 
 # Generated fixture bundle. Contains real segment geometry near home and real PR
-# times. Section 11 of the project plan requires sanitised fixtures and redacted
-# home zones before any public demo, so the raw bundle stays local.
+# times. Public fixtures must be sanitised, with home zones redacted, so the raw
+# bundle stays local.
 # Regenerate with: uv run python scripts/fetch_strava_fixtures.py
 apps/web/fixtures/opportunities.json
 
@@ -72,3 +72,6 @@ apps/web/fixtures/calibration.json
 # Local Training snapshot in my-strava's layout, for TRAINING_LOCAL_DATA_DIR.
 # Real activities, routes and gear: never committed.
 data/training-snapshot/
+
+# Working plans stay local.
+docs/PROJECT_PLAN.md

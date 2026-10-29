@@ -65,7 +65,7 @@ disk, and the forecast comes from Open-Meteo, which has no such limit.
 Two marks appear beside a segment in the tables:
 
 - `~` power came from the rider-level model rather than that segment's own
-  attempts. Backtested at 82s mean error against 52s for a segment with its own
+  attempts. Backtested at 83s mean error against 52s for a segment with its own
   fit, so treat the number as a good estimate rather than a measurement.
 - `!` the comparison is against a Strava *elapsed* record, which may be years
   old or include stops. A hundred percent chance of beating one of these means

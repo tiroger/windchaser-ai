@@ -14,7 +14,7 @@ import {
 } from "./physics";
 import type { Rider, RiderModel, Segment } from "./types";
 
-// Matches the reference parameters recorded in section 9 of the project plan.
+// The reference rider the golden fixtures were computed with.
 const FIXTURE_RIDER: Rider = {
   power_w: 250,
   mass_kg: 80,
@@ -37,7 +37,7 @@ function meanTailwind(legs: Array<[number, number]>): number {
   return legs.reduce((s, [l, tw]) => s + tw * l, 0) / dist;
 }
 
-test("golden fixtures from PROJECT_PLAN section 9", () => {
+test("golden fixtures", () => {
   const cases: Array<[string, Array<[number, number]>, number]> = [
     ["calm", [[5000, 0], [5000, 0]], 16.29],
     ["8 m/s out-and-back", [[5000, 8], [5000, -8]], 19.29],

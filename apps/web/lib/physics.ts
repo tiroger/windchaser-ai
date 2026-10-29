@@ -1,5 +1,5 @@
 /**
- * Opportunity algorithm, implementing section 9 of docs/PROJECT_PLAN.md.
+ * Opportunity algorithm: ride-time physics, uncertainty and scoring.
  *
  * The governing rule: anything that changes predicted time enters the physics
  * model; anything that changes whether the rider wants to go stays a score

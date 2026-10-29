@@ -10,8 +10,8 @@ import {
  *
  * Locally these come from a .env file. Deployed, they come from Secrets
  * Manager, read with the app's own compute role. Terraform creates the secret
- * but never its value, per section 11 of the project plan, so nothing here is
- * recoverable from state or from a plan output.
+ * but never its value, so nothing here is recoverable from state or from a
+ * plan output.
  *
  * Cached for the life of the container. A rotated credential is picked up on
  * the next cold start rather than the next request, which is the right trade

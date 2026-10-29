@@ -53,7 +53,7 @@ function altitudeAt(profile: ElevationProfile, target: number): number {
 
 /**
  * Resample a polyline into sections short enough that bearing is roughly
- * constant within each, per section 9 of the project plan.
+ * constant within each.
  */
 export function toSections(
   points: LatLon[],

@@ -6,9 +6,8 @@ attaches an hourly forecast to each one, and writes a single JSON bundle that
 the web interface consumes without any runtime API access.
 
 Forecasts are fetched per provider grid cell rather than per segment, matching
-the caching policy in docs/architecture/COST_STRATEGY.md and the ForecastCell
-entity in section 8 of docs/PROJECT_PLAN.md. Segments sharing a cell share one
-provider call.
+the caching policy in docs/architecture/COST_STRATEGY.md. Segments sharing a
+cell share one provider call.
 
 Standard library only, so it runs with no dependency install.
 """
