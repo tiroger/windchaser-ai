@@ -20,6 +20,7 @@ import { LOAD_RATIO } from "@/lib/training/metrics/load-params";
 import type { PerformanceSummary } from "@/lib/training/metrics/performance";
 
 import Chart, { axisText, splitLine, tooltip, useChartPalette } from "./Chart";
+import { DATE_AXIS_LABELS, rideDate } from "./loop-format";
 
 const RATIO_LABELS: Record<RatioStatus, string> = {
   low: "Low",
@@ -261,40 +262,39 @@ function Vo2maxCard({ performance }: { performance: PerformanceSummary }) {
         ? `${vo2max.weightKg.toFixed(1)} kg, the fitted rider mass from route calibration; set your weight for a truer figure`
         : null;
 
-  const byDate = new Map(vo2max.trend.map((point) => [point.date, point.value]));
-  const dates = [...new Set([...vo2max.rides.map((ride) => ride.date), ...vo2max.trend.map((p) => p.date)])].sort();
+  // A time axis, so rides sit at their dates: a month without qualifying
+  // rides shows as a gap instead of collapsing to one slot.
   const option: EChartsOption = {
     grid: { top: 24, left: 34, right: 10, bottom: 22 },
     legend: { top: 0, right: 0, textStyle: text, itemWidth: 12, itemHeight: 3 },
     tooltip: {
       ...tooltip(palette),
-      trigger: "axis",
-      valueFormatter: (value) => (value == null ? "—" : Number(value).toFixed(1)),
+      trigger: "item",
+      formatter: (params: unknown) => {
+        const { seriesName, value } = params as { seriesName: string; value: [string, number] };
+        const label = seriesName === "Ride" ? "Ride" : "6-week median";
+        return `<b>${rideDate(value[0], true)}</b><br/>${label} ${value[1].toFixed(1)}`;
+      },
     },
     xAxis: {
-      type: "category",
-      data: dates,
-      axisLabel: { ...text, formatter: (value: string) => formatCalendarDate(value, { month: "short" }) },
-      axisTick: { show: false },
+      type: "time",
+      axisLabel: { ...text, hideOverlap: true, formatter: DATE_AXIS_LABELS },
       axisLine: { lineStyle: { color: palette.line } },
+      splitLine: { show: false },
     },
     yAxis: { type: "value", scale: true, splitNumber: 3, axisLabel: text, splitLine: splitLine(palette) },
     series: [
       {
         name: "Ride",
-        type: "line",
-        data: dates.map((date) => vo2max.rides.find((ride) => ride.date === date)?.value ?? null),
-        showSymbol: true,
+        type: "scatter",
+        data: vo2max.rides.map((ride) => [ride.date, ride.value]),
         symbolSize: 8,
-        connectNulls: false,
-        lineStyle: { opacity: 0 },
         itemStyle: { color: alpha(palette.ink3, 0.55), borderColor: palette.surface, borderWidth: 2 },
       },
       {
         name: "VO2max",
         type: "line",
-        data: dates.map((date) => byDate.get(date) ?? null),
-        connectNulls: true,
+        data: vo2max.trend.map((point) => [point.date, point.value]),
         showSymbol: false,
         lineStyle: { color: palette.accent, width: 2 },
         itemStyle: { color: palette.accent },
