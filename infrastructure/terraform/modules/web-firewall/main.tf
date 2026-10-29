@@ -11,8 +11,7 @@
 #                         rejected the briefing payload.
 #
 # Adopting it rather than deleting it keeps the protection and makes the
-# exceptions reviewable. Section 15 of the project plan is explicit that nothing
-# is created outside Terraform without being imported.
+# exceptions reviewable: nothing created outside Terraform stays undeclared.
 
 resource "aws_wafv2_web_acl" "amplify" {
   name        = var.web_acl_name
@@ -158,6 +157,52 @@ resource "aws_wafv2_web_acl" "amplify" {
       sampled_requests_enabled   = true
       cloudwatch_metrics_enabled = true
       metric_name                = "AWS-AWSManagedRulesKnownBadInputsRuleSet"
+    }
+  }
+
+  # Per-address rate limits, after the managed groups so known-bad traffic is
+  # refused before it counts. Blocked requests get WAF's 403.
+  dynamic "rule" {
+    for_each = var.rate_limits
+    iterator = limit
+
+    content {
+      name     = "RateLimit${limit.key}"
+      priority = 10 + index(sort(keys(var.rate_limits)), limit.key)
+
+      action {
+        block {}
+      }
+
+      statement {
+        rate_based_statement {
+          limit                 = limit.value.limit
+          evaluation_window_sec = 300
+          aggregate_key_type    = "IP"
+
+          scope_down_statement {
+            byte_match_statement {
+              search_string         = limit.value.path_prefix
+              positional_constraint = "STARTS_WITH"
+
+              field_to_match {
+                uri_path {}
+              }
+
+              text_transformation {
+                priority = 0
+                type     = "LOWERCASE"
+              }
+            }
+          }
+        }
+      }
+
+      visibility_config {
+        sampled_requests_enabled   = true
+        cloudwatch_metrics_enabled = true
+        metric_name                = "RateLimit${limit.key}"
+      }
     }
   }
 

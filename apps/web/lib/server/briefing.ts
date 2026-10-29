@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 
 import { compassLabel, formatDelta, formatDuration } from "../geo";
 import { readEnv } from "./env";
+import { RateLimiter } from "./rate-limit";
 
 /**
  * The briefing reads facts, not geometry. Sending whole segments meant posting
@@ -267,16 +268,29 @@ function parseReply(content: Array<{ type: string; text?: string }>) {
   return { headline: parsed.headline, body: parsed.body };
 }
 
+/**
+ * Model calls per compute instance per hour. The route is public and the
+ * evidence comes from the browser, so without a ceiling anyone could spend the
+ * model budget by varying it. Over the limit the template answers instead, and
+ * is not cached, so the next window can still produce the model's version.
+ */
+const modelCalls = new RateLimiter(60, 60 * 60 * 1000);
+/** Evidence sets held; the oldest goes first once full. */
+const CACHE_LIMIT = 500;
+
+function remember(hash: string, briefing: Briefing): Briefing {
+  cache.set(hash, briefing);
+  if (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
+  return briefing;
+}
+
 export async function generateBriefing(input: BriefingInput): Promise<Briefing> {
   const hash = evidenceHash(input);
   const hit = cache.get(hash);
   if (hit) return hit;
 
-  if (!liveAiEnabled()) {
-    const fallback = templateBriefing(input);
-    cache.set(hash, fallback);
-    return fallback;
-  }
+  if (!liveAiEnabled()) return remember(hash, templateBriefing(input));
+  if (!modelCalls.take("model").ok) return templateBriefing(input);
 
   const prompt = buildPrompt(input);
   const haveAws = Boolean(
@@ -302,8 +316,7 @@ export async function generateBriefing(input: BriefingInput): Promise<Briefing> 
         generated_at: new Date().toISOString(),
         model: MODEL,
       };
-      cache.set(hash, briefing);
-      return briefing;
+      return remember(hash, briefing);
     } catch (error) {
       console.warn(
         `[briefing] ${source} failed, falling through:`,
@@ -312,7 +325,5 @@ export async function generateBriefing(input: BriefingInput): Promise<Briefing> 
     }
   }
 
-  const fallback = templateBriefing(input);
-  cache.set(hash, fallback);
-  return fallback;
+  return remember(hash, templateBriefing(input));
 }
