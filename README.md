@@ -336,7 +336,7 @@ sequenceDiagram
 | S3 | Versioned application data bucket; Terraform state bucket |
 | Secrets Manager | Strava credentials (rotated by the workers) and owner-mode secrets |
 | Amazon Bedrock | Claude for the briefing and Ask, through the Bedrock Mantle endpoint |
-| AWS WAF | IP reputation, common and known-bad-inputs managed rule groups, with a narrow exception for the Strava webhook |
+| AWS WAF | IP reputation, common and known-bad-inputs managed rule groups; per-IP rate limits on owner sign-in, the briefing and Ask; a narrow exception for the Strava webhook |
 | Route 53 + ACM | Hosted zone and certificates for `windchaser.io` through the Amplify domain association |
 | CloudWatch + SNS | Worker error, dead-letter and queue-age alarms, emailed |
 | Budgets + Cost Anomaly Detection | A monthly budget on the application's cost tag, and anomaly alerts |
@@ -370,7 +370,8 @@ environments/
     denied any change to the bootstrap roles, the OIDC provider or the state
     bucket's protection.
 - **Lambda packages** are zipped from source by Terraform. A Python change
-  ships through `terraform apply`, and the web app through Amplify.
+  ships through `terraform apply`, and the web app through an Amplify build
+  started by the deploy workflow.
 - **Existing resources** (the Amplify-created web ACL, a connected Amplify
   branch) are adopted with `import` blocks rather than recreated.
 - **Runtime configuration:** Amplify does not expose environment variables to
@@ -383,17 +384,17 @@ environments/
 ```mermaid
 flowchart LR
   pr[Pull request] --> ci
-  pr --> plan[terraform-plan<br/>OIDC plan role<br/>plan against dev]
+  pr --> plan[terraform-plan<br/>OIDC plan role<br/>plan posted on the PR]
   subgraph ci[CI]
     rq[repository-quality<br/>no secrets or state committed]
     tq[terraform-quality<br/>fmt + validate]
     pq[python-quality<br/>uv, worker + MCP tests,<br/>physics parity]
     wq[web-quality<br/>typecheck, lint, vitest, build]
   end
-  merge[Merge to main] --> deploy[deploy-dev<br/>OIDC apply role<br/>terraform apply]
-  merge --> amp[Amplify build<br/>amplify.yml]
-  deploy --> aws[(AWS dev)]
-  amp --> aws
+  merge[Push to main] --> ci2[CI]
+  ci2 -- passed --> deploy[deploy-dev<br/>OIDC apply role<br/>terraform apply]
+  deploy --> amp[Amplify build<br/>of the tested commit]
+  amp --> smoke[Smoke tests<br/>windchaser.io]
   cron[Weekly cron] --> drift[drift<br/>plan -detailed-exitcode]
   tag[Tag v*] --> prod[deploy-prod]
 ```
@@ -401,14 +402,16 @@ flowchart LR
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `ci.yml` | Pull requests, pushes to `main` | Rejects committed `.env`, state, plans and keys; checks Terraform formatting and validates every root; runs the Python suites (Strava worker, training sync, calibration, MCP protocol) and a TypeScript/Python physics parity check; typechecks, lints, tests (vitest) and builds the web app |
-| `terraform-plan.yml` | Pull requests touching Terraform | Assumes the plan role through OIDC and plans against the dev backend |
-| `deploy-dev.yml` | Push to `main` | Assumes the development apply role through OIDC; `terraform plan` + `apply` |
+| `terraform-plan.yml` | Pull requests touching Terraform | Assumes the plan role through OIDC, plans against the dev backend, and posts the plan as a comment on the pull request |
+| `deploy-dev.yml` | CI passing on `main` | Assumes the development apply role through OIDC and runs `terraform apply`; starts the Amplify build of the tested commit and waits for it; smoke-tests windchaser.io (health, both sections render with data, key APIs answer) |
 | `deploy-prod.yml` | Tags `v*` | The same against production |
 | `drift.yml` | Mondays | `terraform plan -detailed-exitcode` to detect changes made outside Terraform |
 
-Credentials are short-lived OIDC sessions only. Role ARNs and the state bucket
-are GitHub variables, and the alert email address is a GitHub secret. Amplify
-builds and deploys the web app on every push to `main`.
+Nothing deploys unless CI passed on that commit. Amplify's auto-build is off
+for this reason: the deploy workflow starts each build after Terraform has
+applied, then smoke-tests the live site. Credentials are short-lived OIDC
+sessions only. Role ARNs and the state bucket are GitHub variables, and the
+alert email address is a GitHub secret.
 
 ## Security, privacy and cost
 
@@ -419,6 +422,11 @@ builds and deploys the web app on every push to `main`.
     (`Sec-Fetch-Site`).
   - S3 writes are conditional on the version read, and IAM allows the web
     runtime to write only two keys.
+- **Rate limits:**
+  - **WAF, per client address:** owner sign-in, the public briefing and Ask.
+  - **App, per compute instance:** sign-in attempts are capped, and briefing
+    model calls are capped (after that a deterministic template answers).
+  - The public health endpoint reports only whether configuration resolved.
 - **Location privacy:**
   - every response that carries coordinates hides the first and last 500 m of
     each route;
