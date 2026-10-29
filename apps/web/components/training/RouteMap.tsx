@@ -47,12 +47,15 @@ function toGeoJson(
     : position && starts.some(({ start }) => near(start, position))
       ? position
       : homeFocus(starts);
+  const framed: number[][] = [];
   const features = lines.flatMap(({ route, coordinates }) => {
     if (coordinates.length < 2) return [];
-    if (!center || near(coordinates[0], center)) {
+    if (!center) {
       for (const [lng, lat] of coordinates) {
         bounds = bounds ? bounds.extend([lng, lat]) : new LngLatBounds([lng, lat], [lng, lat]);
       }
+    } else if (near(coordinates[0], center)) {
+      framed.push(...coordinates);
     }
     return [
       {
@@ -62,7 +65,20 @@ function toGeoJson(
       },
     ];
   });
+  if (framed.length) {
+    // The middle 96% of the heatmap's points: a handful of long rides away
+    // from home would otherwise shrink the roads ridden every week to a speck.
+    const [west, east] = spread(framed.map(([lng]) => lng));
+    const [south, north] = spread(framed.map(([, lat]) => lat));
+    bounds = new LngLatBounds([west, south], [east, north]);
+  }
   return { data: { type: "FeatureCollection", features }, bounds };
+}
+
+function spread(values: number[]): [number, number] {
+  const sorted = [...values].sort((a, b) => a - b);
+  const at = (q: number) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))];
+  return [at(0.02), at(0.98)];
 }
 
 /**

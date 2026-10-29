@@ -285,10 +285,14 @@ function Vo2maxCard({ performance }: { performance: PerformanceSummary }) {
     yAxis: { type: "value", scale: true, splitNumber: 3, axisLabel: text, splitLine: splitLine(palette) },
     series: [
       {
+        // Dots only: a line series with the line hidden, since the bundle
+        // registers no scatter chart.
         name: "Ride",
-        type: "scatter",
+        type: "line",
         data: vo2max.rides.map((ride) => [ride.date, ride.value]),
+        showSymbol: true,
         symbolSize: 8,
+        lineStyle: { opacity: 0 },
         itemStyle: { color: alpha(palette.ink3, 0.55), borderColor: palette.surface, borderWidth: 2 },
       },
       {
