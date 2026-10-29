@@ -13,8 +13,11 @@ applications:
         preBuild:
           commands:
             # Match the Node version the repository pins rather than whatever
-            # the build image ships with.
-            - nvm install $(cat ../../.node-version)
+            # the build image ships with. The image's nvm otherwise also
+            # installs its default global packages (Amplify CLI, Cypress, Hugo,
+            # ...), which this build never uses and which twice hung until the
+            # 30-minute build limit.
+            - nvm install --skip-default-packages $(cat ../../.node-version)
             - nvm use $(cat ../../.node-version)
             - node --version
             - npm ci
