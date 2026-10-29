@@ -95,9 +95,9 @@ jobs:
       - name: Verify Python environment
         run: uv run python --version
 
-      - name: Compile the analytics package, services and scripts
+      - name: Compile the analytics package, services, scripts and modeling
         run: |
-          uv run python -m compileall -q packages/cycling-analytics services scripts mcp
+          uv run python -m compileall -q packages/cycling-analytics services scripts mcp modeling
 
       - name: Strava worker behaviour
         run: uv run python scripts/test_strava_worker.py
@@ -110,6 +110,11 @@ jobs:
 
       - name: MCP server speaks the protocol
         run: uv run python scripts/test_mcp_server.py
+
+      # The notebooks need private ride data, so CI compiles them (above) and
+      # tests the shared code they rely on against synthetic data.
+      - name: Modeling workspace behaviour
+        run: uv run python scripts/test_modeling.py
 
       - name: Physics parity with the TypeScript implementation
         run: |
