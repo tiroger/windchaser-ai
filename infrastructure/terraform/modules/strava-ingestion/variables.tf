@@ -104,6 +104,17 @@ variable "bundle_s3_key" {
   default     = "opportunities.json"
 }
 
+variable "segment_usage_s3_key" {
+  description = <<-EOT
+    Object counting how often the rider rides every segment, tracked or not,
+    built from the activities the worker already reads, so it costs no Strava
+    call of its own. The refresh backfills the most ridden untracked segment
+    from it, and the web application reads it to offer those segments.
+  EOT
+  type        = string
+  default     = "segment-usage.json"
+}
+
 variable "refresh_schedule" {
   description = <<-EOT
     How often to attach newly available reanalysis weather and rebuild.
