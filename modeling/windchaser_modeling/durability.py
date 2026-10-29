@@ -167,3 +167,63 @@ def critical_power(bests: dict[int, float], durations=(180, 300, 480, 600, 1200)
     work = np.array([bests[int(d)] * d for d in t])
     cp, w_prime = np.polyfit(t, work, 1)
     return float(cp), float(max(w_prime, 0.0))
+
+
+# --------------------------------------------------------------------------
+# data assembly
+# --------------------------------------------------------------------------
+
+POWER_SPORTS = ("Ride", "VirtualRide", "GravelRide")
+MAX_ZERO_SHARE = 0.35
+
+
+def zero_share(stream) -> float:
+    """Share of stored samples at exactly 0 W. Coasting outdoors is typically
+    10-30%; far above that is a power meter that dropped out mid-ride."""
+    w = np.nan_to_num(stream["watts"].to_numpy())
+    return float(np.mean(w == 0)) if len(w) else float("nan")
+
+
+def ride_mmp_table(acts, load_stream, durations=(300, 1200), bin_kj: float = 500.0):
+    """Per ride and work bin, mean-maximal power, for rides with a power meter
+    and a stored stream. Rides whose stream is mostly zeros are dropped."""
+    import pandas as pd
+
+    from .features import mmp_by_work, stream_total_kj
+
+    keep = acts[acts["has_stream"] & acts["device_watts"] & acts["sport_type"].isin(POWER_SPORTS)]
+    rows = []
+    for a in keep.itertuples():
+        st = load_stream(a.activity_id)
+        if st is None or not np.isfinite(st["watts"]).any():
+            continue
+        zs = zero_share(st)
+        if zs > MAX_ZERO_SHARE:
+            continue
+        mm = mmp_by_work(st, durations, bin_kj)
+        if mm.empty:
+            continue
+        mm["activity_id"] = a.activity_id
+        mm["start_local"] = a.start_local
+        mm["sport_type"] = a.sport_type
+        mm["total_kj"] = stream_total_kj(st)
+        mm["zero_share"] = zs
+        rows.append(mm)
+    return pd.concat(rows, ignore_index=True)
+
+
+def fitness_reference(acts, when, duration_s: int, days: int = 90) -> float:
+    """Best full-resolution power for a duration in the `days` before `when`,
+    from the 1 Hz bests the sync stored (never from the ride itself)."""
+    window = acts[(acts["start_local"] < when) & (acts["start_local"] >= when - np.timedelta64(days, "D"))]
+    vals = [pb.get(str(duration_s)) for pb in window["power_bests"] if pb and pb.get(str(duration_s))]
+    return float(max(vals)) if vals else float("nan")
+
+
+def recent_bests(acts, until, days: int = 365) -> dict[int, float]:
+    window = acts[(acts["start_local"] <= until) & (acts["start_local"] > until - np.timedelta64(days, "D"))]
+    out: dict[int, float] = {}
+    for pb in window["power_bests"]:
+        for k, v in (pb or {}).items():
+            out[int(k)] = max(out.get(int(k), 0.0), float(v))
+    return out

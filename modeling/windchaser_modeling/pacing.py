@@ -296,3 +296,45 @@ def coarsen(sections, max_sections: int = 100):
             }
         )
     return pd.DataFrame(rows)
+
+
+def ride_course(stream, max_sections: int = 100):
+    """A recorded ride's own course, as planner sections, coarsened."""
+    from .features import route_sections
+
+    secs = route_sections(
+        stream["distance_m"].to_numpy(),
+        stream["altitude_m"].to_numpy(),
+        stream["lat"].to_numpy(),
+        stream["lng"].to_numpy(),
+    )
+    return coarsen(secs, max_sections) if len(secs) else secs
+
+
+def replay_ride(stream, sections, rider: Rider, phys: Physiology, wind_from_deg=0.0, wind_speed_ms=0.0, rho=1.225):
+    """Physics time for a recorded ride three ways: at its mean power held
+    constant, at the power it actually rode on each section, and optimised at
+    the same mean and normalised power the rider actually produced.
+
+    Comparing the first two with the recorded moving time tests whether the
+    physics is right about pacing at all, which is what any claimed gain from
+    the optimiser rests on.
+    """
+    from .features import moving_dt, section_power
+
+    course = make_course(sections, wind_from_deg, wind_speed_ms, rho)
+    table = SpeedTable(course, rider, p_max=900.0)
+    dt = moving_dt(stream["t_s"].to_numpy())
+    mean_w = float(np.sum(np.nan_to_num(stream["watts"].to_numpy()) * dt) / dt.sum())
+    actual = section_power(stream, sections)
+    const = constant_plan(table, mean_w, phys)
+    rode = evaluate_plan(table, actual, phys, "as ridden")
+    return {
+        "mean_power_w": mean_w,
+        "const_s": const.total_s,
+        "as_ridden_s": rode.total_s,
+        "as_ridden_np_w": strain_np(rode.power_w, rode.time_s),
+        "table": table,
+        "course": course,
+        "section_power": actual,
+    }
