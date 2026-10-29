@@ -202,6 +202,7 @@ export default function WindPage() {
             onSelect={(id) => navigate({ segment: id })}
             here={located.at}
             theme={theme}
+            includeRoute={regionId !== null && regionId === bundle.regions.find((r) => r.id !== "here")?.id}
           />
         )
       ) : (

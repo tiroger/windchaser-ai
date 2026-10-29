@@ -10,6 +10,9 @@ import Scrubber from "@/components/Scrubber";
 import SegmentDetail from "@/components/SegmentDetail";
 import SegmentMap from "@/components/SegmentMap";
 import type { Theme } from "@/components/ThemeToggle";
+import { rankingDay } from "@/components/RouteDays";
+import { useRouteRanking } from "@/components/training/RouteSketch";
+import { briefingPayload } from "@/lib/briefing-evidence";
 import { rideableHours, weekChances, type WindChance } from "@/lib/chances";
 import { evaluate } from "@/lib/physics";
 import type { Briefing } from "@/lib/server/briefing";
@@ -33,6 +36,7 @@ export default function SegmentsView({
   onSelect,
   here,
   theme,
+  includeRoute,
 }: {
   bundle: Bundle & { notice?: string };
   regionId: string | null;
@@ -42,6 +46,8 @@ export default function SegmentsView({
   onSelect: (id: number | null) => void;
   here: LatLon | null;
   theme: Theme;
+  /** Whether the briefing may mention the best saved route: true in the region the rider rides now. */
+  includeRoute: boolean;
 }) {
   const [hourOverride, setHourOverride] = useState<number | null>(null);
   // Reading the clock during render is impure, so it lives in state and ticks
@@ -188,55 +194,44 @@ export default function SegmentsView({
     });
   }, [selectedId, matrix, times, segments]);
 
-  // The briefing reads the real chances only, never a soft record.
-  const briefed = useMemo(() => ranked.filter((r) => !r.segment.record?.soft), [ranked]);
+  // The best saved route for the wind, for the briefing: today's, or
+  // tomorrow's once today's daylight is gone. Routes are ranked near home, so
+  // only the region the rider rides now gets one.
+  const todayRoutes = useRouteRanking(includeRoute ? "today" : null);
+  const { day: routeDay } = rankingDay(null, todayRoutes);
+  const laterRoutes = useRouteRanking(includeRoute && routeDay !== "today" ? routeDay : null);
+  const routeLoad = routeDay === "today" ? todayRoutes : laterRoutes;
+  const routeSettled = !includeRoute || (routeLoad !== null && routeLoad.status !== "loading");
+  const bestRoute = routeLoad?.status === "ready" ? (routeLoad.data.routes[0] ?? null) : null;
+
+  // Everything the briefing may say, copied from what is computed here. Soft
+  // records are left out of it (lib/briefing-evidence.ts).
+  const evidence = useMemo(
+    () =>
+      briefingPayload({
+        regionName,
+        athleteName: bundle.athlete.firstname,
+        timezone,
+        blockedCount,
+        ranked,
+        closest: week.closest,
+        route: bestRoute ? { route: bestRoute, day: routeDay } : null,
+      }),
+    [regionName, bundle.athlete.firstname, timezone, blockedCount, ranked, week.closest, bestRoute, routeDay],
+  );
 
   // One briefing per evidence set, not per interaction.
-  const briefingKey = briefed
-    .slice(0, 5)
-    .map((r) => `${r.segment.id}:${r.hourIndex}:${Math.round(r.evaluation.score * 50)}`)
-    .join("|");
+  const briefingKey = JSON.stringify(evidence);
   const lastBriefingKey = useRef<string>("");
 
   useEffect(() => {
-    if (briefed.length === 0 || briefingKey === lastBriefingKey.current) return;
+    if (!routeSettled || evidence.ranked.length === 0 || briefingKey === lastBriefingKey.current) return;
     lastBriefingKey.current = briefingKey;
     setBriefingLoading(true);
     fetch("/api/briefing", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        regionName,
-        athleteName: bundle.athlete.firstname,
-        timezone,
-        blockedCount,
-        // Only the facts the briefing reads: Amplify rejects a POST body over
-        // roughly 6 KB at the edge.
-        ranked: briefed.slice(0, 5).map((r) => ({
-          segment: {
-            id: r.segment.id,
-            name: r.segment.name,
-            distance_m: r.segment.distance_m,
-            average_grade: r.segment.average_grade,
-            target_time_s: r.segment.best_moving_time_s ?? r.segment.pr_elapsed_time,
-          },
-          evaluation: {
-            predicted_time_s: r.evaluation.predicted_time_s,
-            p_beat: r.evaluation.p_beat,
-            score: r.evaluation.score,
-            effective_tailwind_ms: r.evaluation.effective_tailwind_ms,
-            mean_crosswind_ms: r.evaluation.mean_crosswind_ms,
-            weather: {
-              wind_speed_ms: r.evaluation.weather.wind_speed_ms,
-              wind_from_deg: r.evaluation.weather.wind_from_deg,
-              gust_ms: r.evaluation.weather.gust_ms,
-              temperature_c: r.evaluation.weather.temperature_c,
-              precip_prob: r.evaluation.weather.precip_prob,
-            },
-          },
-          whenIso: r.whenIso,
-        })),
-      }),
+      body: briefingKey,
     })
       .then(async (r) => {
         if (!r.ok) throw new Error(`briefing failed with ${r.status}`);
@@ -248,7 +243,7 @@ export default function SegmentsView({
         setBriefing(null);
       })
       .finally(() => setBriefingLoading(false));
-  }, [briefingKey, bundle, briefed, regionName, timezone, blockedCount]);
+  }, [briefingKey, evidence.ranked.length, routeSettled]);
 
   /**
    * Selecting a segment means going to its best window, wherever it was

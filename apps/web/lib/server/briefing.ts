@@ -3,37 +3,17 @@ import "server-only";
 import { createHash } from "node:crypto";
 
 import { compassLabel, formatDelta, formatDuration } from "../geo";
+import { formatHours } from "../training/activity-types";
 import { readEnv } from "./env";
 import { RateLimiter } from "./rate-limit";
 
-/**
- * The briefing reads facts, not geometry. Sending whole segments meant posting
- * 240-point polylines and elevation profiles to a text endpoint that never
- * looks at them, and Amplify's compute rejects a POST body over roughly 6 KB
- * at the edge, before any of this runs. These are exactly the fields used.
- */
-export interface BriefingSegment {
-  id: number;
-  name: string;
-  distance_m: number;
-  average_grade: number;
-  target_time_s: number | null;
-}
+import type {
+  BriefingNearMiss,
+  BriefingRanked,
+  BriefingRoute,
+} from "../briefing-evidence";
 
-export interface BriefingEvaluation {
-  predicted_time_s: number;
-  p_beat: number | null;
-  score: number;
-  effective_tailwind_ms: number;
-  mean_crosswind_ms: number;
-  weather: {
-    wind_speed_ms: number;
-    wind_from_deg: number;
-    gust_ms: number;
-    temperature_c: number;
-    precip_prob: number;
-  };
-}
+export type { BriefingEvaluation, BriefingSegment } from "../briefing-evidence";
 
 /**
  * The narrative layer.
@@ -63,12 +43,12 @@ export interface BriefingInput {
   athleteName: string | null;
   now: Date;
   timezone: string;
-  ranked: Array<{
-    segment: BriefingSegment;
-    evaluation: BriefingEvaluation;
-    whenIso: string;
-  }>;
+  ranked: BriefingRanked[];
   blockedCount: number;
+  /** The week's closest misses on real records, best first. */
+  nearMisses?: BriefingNearMiss[];
+  /** The saved route the wind favours most on the relevant day. */
+  route?: BriefingRoute | null;
 }
 
 /**
@@ -98,17 +78,41 @@ export function evidenceHash(input: BriefingInput): string {
     Math.round(r.evaluation.weather.wind_speed_ms * 2),
     Math.round(r.evaluation.weather.wind_from_deg / 15),
   ]);
+  const still = input.ranked.slice(0, 5).map((r) => {
+    const sa = r.segment.still_air;
+    return sa ? [sa.best_s, sa.pr_rank, sa.rough] : null;
+  });
+  const misses = (input.nearMisses ?? []).map((m) => [m.name, m.when, Math.round(m.gap_s)]);
+  const route = input.route
+    ? [input.route.name, input.route.start_label, input.route.predicted_s, input.route.saved_s]
+    : null;
   return createHash("sha256")
-    .update(JSON.stringify({ region: input.regionName, material }))
+    .update(JSON.stringify({ region: input.regionName, material, still, misses, route }))
     .digest("hex")
     .slice(0, 16);
 }
 
+/**
+ * "Sunday 1 PM" from a forecast wall-clock hour. Read as written, never
+ * through the server's own time zone, which knows nothing of the rider's.
+ */
+export function wallClockLabel(time: string): string {
+  const instant = Date.parse(`${time.slice(0, 16)}:00Z`);
+  if (!Number.isFinite(instant)) return time;
+  const day = new Date(instant).toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
+  const hour = new Date(instant).toLocaleTimeString("en-US", { hour: "numeric", timeZone: "UTC" });
+  return `${day} ${hour}`;
+}
+
+const ORDINAL = new Intl.PluralRules("en-US", { type: "ordinal" });
+const SUFFIX: Record<string, string> = { one: "st", two: "nd", few: "rd", other: "th" };
+const ordinal = (n: number) => `${n}${SUFFIX[ORDINAL.select(n)] ?? "th"}`;
+
+const DAY_WORDS = { today: "today", tomorrow: "tomorrow", weekend: "this weekend" } as const;
+
 function describe(r: BriefingInput["ranked"][number]): string {
   const { segment, evaluation, whenIso } = r;
-  const when = new Date(whenIso);
-  const day = when.toLocaleDateString("en-US", { weekday: "long" });
-  const hour = when.toLocaleTimeString("en-US", { hour: "numeric" });
+  const [day, hour] = wallClockLabel(whenIso).split(/ (.*)/);
   const delta = segment.target_time_s
     ? formatDelta(evaluation.predicted_time_s - segment.target_time_s)
     : "no recorded time to compare against";
@@ -133,10 +137,41 @@ function describe(r: BriefingInput["ranked"][number]): string {
     `  crosswind ${evaluation.mean_crosswind_ms.toFixed(1)} m/s, ` +
       `${evaluation.weather.temperature_c.toFixed(0)}°C, ` +
       `${evaluation.weather.precip_prob.toFixed(0)}% chance of rain`,
+    ...stillAirLine(segment),
   ].join("\n");
 }
 
-function buildPrompt(input: BriefingInput): string {
+/** The rider's best with the wind taken out, when the history has one. */
+function stillAirLine(segment: BriefingRanked["segment"]): string[] {
+  const sa = segment.still_air;
+  if (!sa) return [];
+  const rank =
+    sa.pr_rank !== null ? `; the PR ranks ${ordinal(sa.pr_rank)} of ${sa.count} in still air` : "";
+  const rough = sa.rough
+    ? "; rough here: still-air times track the power meter poorly on this segment, so treat them loosely"
+    : "";
+  return [`  still air: best ${formatDuration(sa.best_s)} against a recorded PR of ${formatDuration(sa.pr_s)}${rank}${rough}`];
+}
+
+function describeMiss(m: BriefingNearMiss): string {
+  return (
+    `- ${m.name}: best rideable hour ${wallClockLabel(m.when)}, predicted ${formatDuration(m.predicted_s)} ` +
+    `vs record ${formatDuration(m.target_s)} (${formatDelta(m.gap_s)}), ${Math.round(m.p_beat * 100)}% chance`
+  );
+}
+
+function describeRoute(route: BriefingRoute): string {
+  const saved = Math.round(route.saved_s / 60);
+  const effect =
+    saved > 0 ? `${saved} min faster than calm air` : saved < 0 ? `${-saved} min slower than calm air` : "no faster than calm air";
+  return [
+    `- ${route.name}, ${route.distance_mi} mi, best start ${route.start_label}`,
+    `  predicted ${formatHours(route.predicted_s / 3600)} moving against ${formatHours(route.calm_s / 3600)} in calm air (${effect})`,
+    `  tailwind on ${route.tail_pct}% of the route; ${route.before_sunset ? "back before sunset" : "finishes after sunset"}`,
+  ].join("\n");
+}
+
+export function buildPrompt(input: BriefingInput): string {
   const lines = input.ranked.map(describe).join("\n");
   return [
     `Region: ${input.regionName}`,
@@ -147,6 +182,12 @@ function buildPrompt(input: BriefingInput): string {
     "",
     "Ranked opportunities over the next seven days:",
     lines,
+    ...(input.nearMisses?.length
+      ? ["", "Near misses this week (best rideable hour, not within reach of the record):", ...input.nearMisses.map(describeMiss)]
+      : []),
+    ...(input.route
+      ? ["", `Best saved route for the wind ${DAY_WORDS[input.route.day]}:`, describeRoute(input.route)]
+      : []),
   ].join("\n");
 }
 
@@ -160,32 +201,37 @@ Rules you must follow:
 - Lead with the single best opportunity and say plainly why the wind favours it.
 - If nothing is genuinely good, say so directly rather than manufacturing enthusiasm.
 - Mention a tradeoff when one exists, for example a strong tailwind arriving with gusts or rain.
+- You may add, briefly and only when it helps: the rider's still-air best on a segment (their best with the wind taken out, and where their PR ranks there), honouring any "rough here" caveat; a near miss worth knowing about; and the best saved route for a longer ride. Use only the figures given for them.
 - Write in second person, plain language, no exclamation marks, no cycling cliches, no emoji.
 
 Respond as JSON matching this shape exactly:
-{"headline": "<max 60 characters, specific to the best window>", "body": "<2 to 4 sentences>"}`;
+{"headline": "<max 60 characters, specific to the best window>", "body": "<2 to 5 sentences>"}`;
 
 /** Always-available fallback. Same evidence, no model. */
 export function templateBriefing(input: BriefingInput): Briefing {
+  // One sentence per fact, each restating a figure from the evidence.
   const hash = evidenceHash(input);
   const best = input.ranked[0];
 
   if (!best) {
+    const route = routeSentence(input.route);
     return {
       headline: "No rideable windows in the next seven days",
-      body:
+      body: [
         input.blockedCount > 0
           ? `Every window in this region was rejected by a safety gate, ${input.blockedCount} in total. Check back once the forecast updates.`
           : "There are no scored windows for this region yet.",
+        route,
+      ]
+        .filter(Boolean)
+        .join(" "),
       source: "template",
       evidence_hash: hash,
       generated_at: new Date().toISOString(),
     };
   }
 
-  const when = new Date(best.whenIso);
-  const day = when.toLocaleDateString("en-US", { weekday: "long" });
-  const hour = when.toLocaleTimeString("en-US", { hour: "numeric" });
+  const [day, hour] = wallClockLabel(best.whenIso).split(/ (.*)/);
   const tail = best.evaluation.effective_tailwind_ms;
   const pr = best.segment.target_time_s;
   const chance =
@@ -222,6 +268,8 @@ export function templateBriefing(input: BriefingInput): Briefing {
   if (input.blockedCount > 0) {
     sentences.push(`${input.blockedCount} other windows were rejected by safety gates.`);
   }
+  const route = routeSentence(input.route);
+  if (route) sentences.push(route);
 
   return {
     headline: `${day} ${hour} on ${best.segment.name}`.slice(0, 60),
@@ -230,6 +278,18 @@ export function templateBriefing(input: BriefingInput): Briefing {
     evidence_hash: hash,
     generated_at: new Date().toISOString(),
   };
+}
+
+/** The template's word on the best saved route, or null without one. */
+function routeSentence(route: BriefingRoute | null | undefined): string | null {
+  if (!route) return null;
+  const saved = Math.round(route.saved_s / 60);
+  const effect =
+    saved > 0 ? `, ${saved} min faster than in calm air` : saved < 0 ? `, ${-saved} min slower than in calm air` : "";
+  return (
+    `For a longer ride, ${route.name} (${route.distance_mi} mi) is the best saved route for the wind ` +
+    `${DAY_WORDS[route.day]}: ${formatHours(route.predicted_s / 3600)} moving from a ${route.start_label} start${effect}.`
+  );
 }
 
 async function callBedrock(prompt: string): Promise<{ headline: string; body: string }> {
