@@ -299,7 +299,9 @@ describe("forecast cells", () => {
   test("the list's summary track asks for the same cells as the profile", () => {
     const profile = straight(60, 600, 30, 0, 37.7, -122.3);
     const fromProfile = sampleCells(sectionsOf(profile)).cells;
-    const fromTrack = polylineCells(encodePolyline(profile.latlng.filter((_, i) => i % 10 === 0)));
+    const fromTrack = polylineCells(
+      encodePolyline(profile.latlng.filter((p, i): p is [number, number] => p !== null && i % 10 === 0)),
+    );
     assert.deepEqual(new Set(fromTrack.map((x) => x.join())), new Set(fromProfile.map((x) => x.join())));
     assert.deepEqual(polylineCells(null), []);
   });

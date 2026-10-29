@@ -1,5 +1,6 @@
 import "server-only";
 
+import { haversineM } from "@/lib/geo";
 import { calibrationTable } from "@/lib/server/calibration";
 import { localToEpoch, plannerSections, round, series, type CellWeather } from "@/lib/server/route-forecast";
 import { cellId, fetchCellsBatched } from "@/lib/server/weather";
@@ -61,6 +62,8 @@ const PROFILE_CONCURRENCY = 40;
 export const RANKING_TTL_MS = 30 * 60 * 1000;
 /** A local snapshot has no ETag, so its sections are rebuilt this often instead. */
 const LOCAL_SECTIONS_TTL_MS = 10 * 60 * 1000;
+/** Routes farther than this from home are ranked only when asked for. */
+export const HOME_RADIUS_M = 200_000;
 /** Extra cells at most for routes the first plan missed. */
 const TOP_UP_CELLS = 20;
 /** Sketches are attached to this many routes at the top of a response. */
@@ -217,8 +220,12 @@ async function computeRanking(day: RankingDay, nowMs: number): Promise<FullRanki
   const cellClocks = forecasts.map(clockOf);
   const weatherByCell: CellWeather[] = forecasts.map((f, i) => series(f, cellClocks[i].hours));
   const index = new Map(arrived.map((c, i) => [cellId(c), i]));
-  // The most shared cell is home; its zone names the day for the response.
+  // The most shared cell is home: its zone's calendar says what "today" is
+  // for every route, so a saved route in Italy is not offered tomorrow
+  // morning there as today's ride.
   const home = cellClocks[0];
+  const homeCell = arrived[0];
+  const dates = rankingDates(day, home.today);
 
   const model = calibration.rider;
   const { rider: base } = plannerRider(model, settings.athlete.weightKg);
@@ -249,7 +256,6 @@ async function computeRanking(day: RankingDay, nowMs: number): Promise<FullRanki
     };
     const power = defaultPower(p.sections, base, model, ftp);
     const rider = { ...base, power_w: power.watts };
-    const dates = rankingDates(day, clock.today);
     const sun = new Map(dates.map((date) => [date, sunTimes(date, p.centre[0], p.centre[1])]));
     const candidates = candidateHours(hours, epochs, dates, clock.from, (date) => sun.get(date));
     const window = bestDayWindow(
@@ -301,6 +307,7 @@ async function computeRanking(day: RankingDay, nowMs: number): Promise<FullRanki
       score: window.score,
       penalties: window.penalties,
       degraded: p.own.some((c) => failed.has(cellId(c))),
+      away: haversineM(p.centre, homeCell) > HOME_RADIUS_M,
       sketchData: sketchOf(p.sections, tail),
     });
   }
@@ -310,7 +317,7 @@ async function computeRanking(day: RankingDay, nowMs: number): Promise<FullRanki
 
   return {
     day,
-    dates: rankingDates(day, home.today),
+    dates,
     today: home.today,
     timezone: home.timezone,
     issued_at: forecasts[0].issued_at,
@@ -357,6 +364,8 @@ function fullRanking(day: RankingDay, nowMs: number): { value: Promise<FullRanki
 export type RankingOptions = {
   day: RankingDay;
   sport?: RankingSport;
+  /** Include routes far from home (trips, rides abroad); left out by default. */
+  everywhere?: boolean;
   minMiles?: number | null;
   maxMiles?: number | null;
   nowMs?: number;
@@ -370,17 +379,21 @@ export async function routeRanking(options: RankingOptions): Promise<{ ranking: 
   const max = options.maxMiles ?? null;
   const { value, cached } = fullRanking(options.day, nowMs);
   const full = await value;
+  const everywhere = options.everywhere ?? false;
   const routes = full.routes
     .filter(
       (r) =>
-        sportMatches(r, sport) && (min === null || r.distance_mi >= min) && (max === null || r.distance_mi <= max),
+        (everywhere || !r.away) &&
+        sportMatches(r, sport) &&
+        (min === null || r.distance_mi >= min) &&
+        (max === null || r.distance_mi <= max),
     )
     .map(({ sketchData, ...r }, i) => (i < SKETCHES ? { ...r, sketch: sketchData } : r));
   return {
     cached,
     ranking: {
       ...full,
-      filters: { sport, min_miles: min, max_miles: max },
+      filters: { sport, min_miles: min, max_miles: max, everywhere },
       routes,
       summary: lightWinds(routes),
     },

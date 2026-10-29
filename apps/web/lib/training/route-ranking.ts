@@ -568,6 +568,8 @@ export type RankedRoute = {
   penalties: Penalties;
   /** Some of this route's forecast cells failed; its nearest neighbours stood in. */
   degraded: boolean;
+  /** More than 200 km from home (where most routes are), so left out unless asked for. */
+  away: boolean;
   /** Only on the top three of a response. */
   sketch?: Sketch | null;
 };
@@ -579,7 +581,7 @@ export type RouteRanking = {
   timezone: string;
   issued_at: string;
   generated_at: string;
-  filters: { sport: RankingSport; min_miles: number | null; max_miles: number | null };
+  filters: { sport: RankingSport; min_miles: number | null; max_miles: number | null; everywhere: boolean };
   routes: RankedRoute[];
   /** Routes that could not be ranked for this day, and why. */
   unranked: Array<{ id: string; name: string; reason: string }>;

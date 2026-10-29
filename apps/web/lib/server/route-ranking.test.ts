@@ -114,6 +114,8 @@ function fakeFetch(input: string | URL) {
   return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
 }
 
+const sketchless = (routes: object[]) => routes.every((r) => !("sketch" in r));
+
 // 2 PM on Wednesday 28 October 2026, Pacific daylight time.
 const NOW = Date.parse("2026-10-28T21:00:00Z");
 
@@ -147,7 +149,7 @@ describe("route ranking", () => {
     const { routeRanking, stats } = await load();
     const { ranking, cached } = await routeRanking({ day: "today", nowMs: NOW });
     assert.equal(cached, false);
-    assert.deepEqual(ranking.routes.map((r) => r.id).sort(), ["1", "2", "3", "4"], "the run is left out");
+    assert.deepEqual(ranking.routes.map((r) => r.id).sort(), ["1", "2", "3"], "the run and the far ride are left out");
     // The Bay Area routes share cells: every distinct cell asked for once.
     const asked = calls.flat();
     assert.equal(new Set(asked).size, asked.length, "no cell asked for twice");
@@ -160,13 +162,23 @@ describe("route ranking", () => {
       assert.ok(ranking.routes[i - 1].score >= ranking.routes[i].score);
     }
     assert.ok(ranking.routes.slice(0, 3).every((r) => "sketch" in r));
-    assert.ok(!("sketch" in ranking.routes[3]));
     // Today's remaining daylight: starts from 2 PM, before sunset.
     for (const r of ranking.routes) {
       assert.ok(r.start >= "2026-10-28T14:00" && r.start < "2026-10-28T18:30", r.start);
     }
     assert.equal(ranking.today, "2026-10-28");
     assert.ok(!JSON.stringify(ranking).match(/37\\.8\\d*,/), "no coordinates in the response");
+  });
+
+  test("routes far from home are ranked only when asked for, on home's calendar", async () => {
+    const { routeRanking } = await load();
+    const near = await routeRanking({ day: "tomorrow", nowMs: NOW });
+    assert.ok(!near.ranking.routes.some((r) => r.id === "4"));
+    const all = await routeRanking({ day: "tomorrow", everywhere: true, nowMs: NOW });
+    const far = all.ranking.routes.find((r) => r.id === "4");
+    assert.ok(far?.away);
+    assert.ok(far.start.startsWith("2026-10-29"), far.start);
+    assert.ok(sketchless(all.ranking.routes.slice(3)));
   });
 
   test("the run is ranked only when asked for", async () => {
@@ -228,10 +240,11 @@ describe("route ranking", () => {
   test("a failed cell degrades only the routes that needed it", async () => {
     failCell = "36.10,-115.10";
     const { routeRanking } = await load();
-    const run = routeRanking({ day: "tomorrow", nowMs: NOW });
+    const run = routeRanking({ day: "tomorrow", everywhere: true, nowMs: NOW });
     await vi.runAllTimersAsync();
     const { ranking } = await run;
     assert.ok(ranking.forecast.failed_cells >= 1);
+    assert.equal(ranking.filters.everywhere, true);
     // The far route's own cell is in a failed batch only if batched with it;
     // either way every Bay Area route still ranks.
     const ids = ranking.routes.map((r) => r.id);

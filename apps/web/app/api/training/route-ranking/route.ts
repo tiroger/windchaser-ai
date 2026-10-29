@@ -18,7 +18,8 @@ function milesParam(value: string | null): number | null | undefined {
 /**
  * Route of the day: every saved route ranked by what the forecast does to it
  * on the chosen day (today's remaining daylight, tomorrow, or the weekend),
- * at the planner's default power. Rides only unless sport=all. Sketches use
+ * at the planner's default power. Rides only unless sport=all, and only those
+ * within 200 km of home unless scope=all. Sketches use
  * relative units built from the privacy-trimmed track, never coordinates.
  */
 export async function GET(request: Request) {
@@ -36,9 +37,19 @@ export async function GET(request: Request) {
   if (minMiles === undefined || maxMiles === undefined) {
     return NextResponse.json({ error: "minMiles and maxMiles must be miles from 0 to 1000" }, { status: 400 });
   }
+  const scope = params.get("scope") ?? "near";
+  if (scope !== "near" && scope !== "all") {
+    return NextResponse.json({ error: "scope must be near or all" }, { status: 400 });
+  }
   const started = performance.now();
   try {
-    const { ranking, cached } = await routeRanking({ day, sport, minMiles, maxMiles });
+    const { ranking, cached } = await routeRanking({
+      day,
+      sport,
+      minMiles,
+      maxMiles,
+      everywhere: scope === "all",
+    });
     const response = revalidatedJson(request, ranking);
     response.headers.set(
       "Server-Timing",
