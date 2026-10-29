@@ -59,6 +59,9 @@ jobs:
           terraform plan -out=tfplan
           terraform apply -auto-approve tfplan
 
-      - name: Production smoke test placeholder
-        run: echo "Add canary and rollback checks before the first production release."
+      # environments/prod declares no resources yet; dev at windchaser.io is
+      # the live environment. Smoke-testing a production URL that does not
+      # exist would pass vacuously, so this says so instead of pretending.
+      - name: Report that production has nothing to smoke-test
+        run: echo "environments/prod declares no resources; see deploy-dev.yml for the live smoke tests."
 
