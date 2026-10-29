@@ -550,7 +550,13 @@ def _heart_rate_anchors(activities: list[dict[str, Any]] | None = None) -> tuple
     fallbacks. The web app applies the same rule to its fallback models, so
     both sides agree.
     """
-    settings = _read_json(os.getenv("SETTINGS_S3_KEY", "settings.json"), {})
+    try:
+        settings = _read_json(os.getenv("SETTINGS_S3_KEY", "settings.json"), {})
+    except Exception as error:  # noqa: BLE001 - the anchors are optional
+        # Settings refine the load; they must never stop a sync. Before the
+        # worker could read them, every run failed once the owner saved one.
+        print(f"[streams] could not read settings, using default heart-rate anchors: {error}")
+        settings = {}
     athlete = settings.get("athlete") if isinstance(settings, dict) else None
     athlete = athlete if isinstance(athlete, dict) else {}
 

@@ -77,6 +77,15 @@ data "aws_iam_policy_document" "worker" {
     ]
   }
 
+  # The owner's settings belong to the web app; this worker only reads the
+  # heart-rate anchors from them.
+  statement {
+    sid       = "ReadOwnerSettings"
+    effect    = "Allow"
+    actions   = ["s3:GetObject"]
+    resources = [format(local.data_object, var.settings_s3_key)]
+  }
+
   # Streams go when their activity is deleted or made private, and a saved
   # route's profile when the route is.
   statement {
@@ -151,6 +160,7 @@ resource "aws_lambda_function" "worker" {
       SYNC_STATE_S3_KEY    = var.sync_state_s3_key
       STREAMS_S3_PREFIX    = var.streams_s3_prefix
       STREAMS_INDEX_S3_KEY = var.streams_index_s3_key
+      SETTINGS_S3_KEY      = var.settings_s3_key
       # One backfill batch: inside Strava's 15-minute read window and the
       # worker timeout, which the handler also guards.
       STREAMS_BACKFILL_LIMIT = tostring(var.streams_backfill_limit)

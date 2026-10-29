@@ -675,6 +675,30 @@ class StreamsSyncTests(WorkerTestCase):
         self.assertEqual(set(store.objects["streams-index.json"]), {"3", "4", "5"})
         self.assertEqual(store.objects["streams/4.json"]["summary"]["power_bests"], {"1": 300})
 
+    def test_unreadable_settings_fall_back_instead_of_failing_the_sync(self):
+        store = FakeStore({"activities.json": [_stored("1", "2025-01-01T08:00:00Z")]})
+        denied = type("AccessDenied", (Exception,), {})
+        stored = store.read
+
+        def read(key, default):
+            # What S3 said for every run once the owner saved a setting the
+            # worker was not allowed to read.
+            if key == "settings.json":
+                raise denied("not authorized to perform s3:GetObject")
+            return stored(key, default)
+
+        ride = _steady(60, 150, watts=220)
+        payload = {key: {"data": value} for key, value in ride.items()}
+        with patch.object(store, "read", side_effect=read):
+            result = self._run(store, {"source": "streams-backfill"}, lambda *_: payload)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["streams_fetched"], 1)
+        entry = store.objects["streams-index.json"]["1"]
+        self.assertEqual(
+            entry["exercise_load"],
+            exercise_load.epoc_load(ride["time"], ride["heartrate"], exercise_load.DEFAULT_REST_HR, exercise_load.DEFAULT_MAX_HR),
+        )
+
     def test_fetched_streams_carry_exercise_load_with_the_owners_heart_rate(self):
         store = FakeStore({
             "activities.json": [_stored("1", "2025-01-01T08:00:00Z")],

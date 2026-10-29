@@ -86,6 +86,12 @@ variable "streams_s3_prefix" {
   default     = "streams/"
 }
 
+variable "settings_s3_key" {
+  description = "The owner's settings, written by the web app; read here for the heart-rate anchors of exercise load."
+  type        = string
+  default     = "settings.json"
+}
+
 variable "streams_index_s3_key" {
   description = "Object summarising which activities have streams, with their effort summaries."
   type        = string
