@@ -79,9 +79,14 @@ export async function fetchCell(cell: [number, number]): Promise<ForecastCell> {
     await new Promise((r) => setTimeout(r, 400 * 2 ** attempt));
   }
   if (!payload) throw new Error(`Open-Meteo gave no payload for cell ${id}`);
-  const h = payload.hourly;
+  const forecast = forecastFrom(id, payload);
+  cache.set(id, { cell: forecast, fetchedAt: Date.now() });
+  return forecast;
+}
 
-  const forecast: ForecastCell = {
+function forecastFrom(id: string, payload: OpenMeteoResponse): ForecastCell {
+  const h = payload.hourly;
+  return {
     cell_id: id,
     latitude: payload.latitude,
     longitude: payload.longitude,
@@ -98,9 +103,6 @@ export async function fetchCell(cell: [number, number]): Promise<ForecastCell> {
     wind_from_deg: h.wind_direction_10m,
     gust_ms: h.wind_gusts_10m,
   };
-
-  cache.set(id, { cell: forecast, fetchedAt: Date.now() });
-  return forecast;
 }
 
 /** Concurrent requests to the forecast provider. Deliberately modest. */
@@ -155,4 +157,110 @@ export async function fetchCells(
     Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker),
   );
   return { cells: out, liveCount, savedCount, failed };
+}
+
+// ------------------------------------------------------------- batched --
+
+/** Cells per request when asking for many at once. Open-Meteo takes a list. */
+export const BATCH_CELLS = 25;
+/** Batched requests in flight at once. */
+const BATCH_CONCURRENCY = 4;
+
+export interface BatchedCellsResult {
+  cells: Record<string, ForecastCell>;
+  failed: string[];
+  /** Cells served from the 30-minute cache without a request. */
+  cachedCount: number;
+  /** HTTP requests made to Open-Meteo. */
+  requests: number;
+}
+
+/**
+ * Many cells for the price of a few requests: the same forecast and the same
+ * cache as fetchCell, but cells not cached are asked for up to BATCH_CELLS at
+ * a time, as Open-Meteo's comma-separated locations. A batch that fails after
+ * its retries marks only its own cells failed; the rest still arrive.
+ */
+export async function fetchCellsBatched(
+  cells: Array<[number, number]>,
+  batchSize = BATCH_CELLS,
+): Promise<BatchedCellsResult> {
+  const unique = new Map<string, [number, number]>();
+  for (const c of cells) unique.set(cellId(c), c);
+
+  const out: Record<string, ForecastCell> = {};
+  const missing: Array<[number, number]> = [];
+  let cachedCount = 0;
+  for (const [id, cell] of unique) {
+    const hit = cache.get(id);
+    if (hit && Date.now() - hit.fetchedAt < TTL_MS) {
+      out[id] = hit.cell;
+      cachedCount++;
+    } else {
+      missing.push(cell);
+    }
+  }
+
+  // Evenly sized, so 80 cells go as four requests of 20 rather than 25, 25, 25 and 5.
+  const batches: Array<Array<[number, number]>> = [];
+  const size = Math.ceil(missing.length / Math.max(1, Math.ceil(missing.length / batchSize)));
+  for (let i = 0; i < missing.length; i += size) batches.push(missing.slice(i, i + size));
+  const failed: string[] = [];
+  let requests = 0;
+
+  // A rejected request (a 4xx other than 429) may be one bad location
+  // spoiling the rest, so it is split in half and retried; a rate limit or an
+  // outage is not, since more requests would only make it worse.
+  const fetchBatch = async (batch: Array<[number, number]>): Promise<void> => {
+    const query = new URLSearchParams({
+      latitude: batch.map((c) => c[0].toFixed(4)).join(","),
+      longitude: batch.map((c) => c[1].toFixed(4)).join(","),
+      hourly: HOURLY,
+      wind_speed_unit: "ms",
+      forecast_days: "7",
+      timezone: "auto",
+    });
+    let payloads: OpenMeteoResponse[] | null = null;
+    let rejected = false;
+    for (let attempt = 0; attempt < 3 && !payloads && !rejected; attempt++) {
+      requests++;
+      try {
+        const res = await fetch(`${OPEN_METEO}?${query}`, { cache: "no-store" });
+        if (res.ok) {
+          const body = (await res.json()) as OpenMeteoResponse | OpenMeteoResponse[];
+          // One location comes back as an object, several as an array in order.
+          payloads = Array.isArray(body) ? body : [body];
+          break;
+        }
+        rejected = res.status !== 429 && res.status < 500;
+      } catch {
+        // Network failure: retried like a 5xx.
+      }
+      if (!payloads && !rejected && attempt < 2) await new Promise((r) => setTimeout(r, 400 * 2 ** attempt));
+    }
+    if (!payloads && rejected && batch.length > 1) {
+      const half = Math.ceil(batch.length / 2);
+      await fetchBatch(batch.slice(0, half));
+      await fetchBatch(batch.slice(half));
+      return;
+    }
+    batch.forEach((cell, index) => {
+      const id = cellId(cell);
+      const payload = payloads?.[index];
+      if (!payload?.hourly?.time) {
+        failed.push(id);
+        return;
+      }
+      const forecast = forecastFrom(id, payload);
+      cache.set(id, { cell: forecast, fetchedAt: Date.now() });
+      out[id] = forecast;
+    });
+  };
+
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < batches.length) await fetchBatch(batches[cursor++]);
+  };
+  await Promise.all(Array.from({ length: Math.min(BATCH_CONCURRENCY, batches.length) }, worker));
+  return { cells: out, failed, cachedCount, requests };
 }
