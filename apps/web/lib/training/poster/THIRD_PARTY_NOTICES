@@ -1,0 +1,37 @@
+Third-party notices for the heatmap's poster themes (themes.ts)
+
+The poster themes' colours (background, text, gradient, water, parks and the
+road hierarchy) are adapted from the theme files of maptoposter, as is the
+poster layout they are composed with: road widths by class, the top and bottom
+gradient fades, and letter-spaced city typography.
+
+  maptoposter - https://github.com/originalankur/maptoposter
+  themes/noir.json, blueprint.json, japanese_ink.json, warm_beige.json,
+  midnight_blue.json, terracotta.json
+
+MIT License
+
+Copyright (c) 2026 Ankur Gupta
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Map data for these themes is served by OpenFreeMap (https://openfreemap.org)
+as OpenMapTiles-schema vector tiles (https://www.openmaptiles.org/) built from
+OpenStreetMap (https://www.openstreetmap.org/copyright), and is credited on
+the map and on every exported poster.

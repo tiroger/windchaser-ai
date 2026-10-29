@@ -580,7 +580,8 @@ export async function loadPublicRouteProfile(id: string): Promise<RouteProfile |
   };
 }
 
-export type HeatRoute = { id: string; type: string; date: string; polyline: string };
+/** `miles` is the whole activity's distance, so a poster can total it. */
+export type HeatRoute = { id: string; type: string; date: string; miles: number; polyline: string };
 
 /**
  * Every mapped outdoor activity's route, ends trimmed, for the heatmap. Virtual
@@ -592,7 +593,15 @@ export async function loadPublicHeatmap(): Promise<HeatRoute[]> {
     if (/virtual/i.test(activity.type)) return [];
     const polyline = publicPolyline(activity.polyline);
     return polyline
-      ? [{ id: activity.id, type: activity.type, date: activity.date.slice(0, 10), polyline }]
+      ? [
+          {
+            id: activity.id,
+            type: activity.type,
+            date: activity.date.slice(0, 10),
+            miles: Math.round(activity.distance * 10) / 10,
+            polyline,
+          },
+        ]
       : [];
   });
 }
