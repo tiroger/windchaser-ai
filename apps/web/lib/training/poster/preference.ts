@@ -8,25 +8,32 @@ type StorageLike = Pick<Storage, "getItem" | "setItem">;
 /**
  * The heatmap's remembered choices. localStorage can throw rather than return
  * null (Safari's private mode, storage blocked by policy, a sandboxed frame),
- * so every access is guarded and a choice made in this tab is kept in memory
- * whether or not it could be stored.
+ * so every access is guarded, and a choice that could not be stored is still
+ * kept in memory for this tab. Stored values win, so another tab's change
+ * shows up here.
  */
 export function createPreferences(storage: () => StorageLike | null) {
   const memory = new Map<string, string>();
+  /** Keys whose latest choice could not be stored, so memory is newer. */
+  const unstored = new Set<string>();
   const read = (key: string): string | null => {
-    if (memory.has(key)) return memory.get(key)!;
+    if (unstored.has(key)) return memory.get(key) ?? null;
     try {
-      return storage()?.getItem(key) ?? null;
+      const stored = storage()?.getItem(key);
+      if (stored != null) return stored;
     } catch {
-      return null;
+      // Unreadable storage: fall through to this tab's memory.
     }
+    return memory.get(key) ?? null;
   };
   const write = (key: string, value: string): boolean => {
     memory.set(key, value);
+    unstored.add(key);
     try {
       const target = storage();
       if (!target) return false;
       target.setItem(key, value);
+      unstored.delete(key);
       return true;
     } catch {
       return false;

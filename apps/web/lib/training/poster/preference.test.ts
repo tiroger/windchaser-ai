@@ -67,3 +67,28 @@ describe("heatmap preferences", () => {
     expect(none.setTheme("noir")).toBe(false);
   });
 });
+
+describe("heatmap preferences across tabs", () => {
+  it("reads a change another tab stored", () => {
+    const storage = memoryStorage();
+    const prefs = createPreferences(() => storage);
+    prefs.setTheme("noir");
+    storage.setItem(THEME_KEY, "terracotta");
+    expect(prefs.theme()).toBe("terracotta");
+  });
+});
+
+describe("heatmap preferences when only writing fails", () => {
+  it("shows the new choice over an older stored one it could not replace", () => {
+    const values = new Map([[THEME_KEY, "noir"]]);
+    const prefs = createPreferences(() => ({
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: () => {
+        throw new DOMException("full", "QuotaExceededError");
+      },
+    }));
+    expect(prefs.theme()).toBe("noir");
+    expect(prefs.setTheme("blueprint")).toBe(false);
+    expect(prefs.theme()).toBe("blueprint");
+  });
+});
