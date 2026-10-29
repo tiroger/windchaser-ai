@@ -29,6 +29,7 @@ deployed by GitHub Actions with short-lived OIDC credentials.
 - [Repository layout](#repository-layout)
 - [Local development](#local-development)
 - [Documentation](#documentation)
+- [Credits](#credits)
 
 ## Features
 
@@ -86,7 +87,8 @@ what is on screen and the back button walks back through it.
 | Activities | Searchable log. Each activity has a map, gradient-coloured elevation profile, 2D and 3D route views, power and heart-rate analysis, and climbs categorised the way Strava does. It also shows this activity's place in its repeated loop and the segment efforts with still-air times |
 | Routes | Most-ridden loops |
 | Saved routes | Every saved Strava route with its profile and climbs, sortable by the wind, with a link to plan it on the wind page |
-| Heatmap | Every outdoor route overlaid on one map |
+| Heatmap | Every outdoor route overlaid on one map, on the site's basemap or one of six poster themes adapted from maptoposter, with optional labels |
+| Heatmap poster | Downloads the current heatmap view as a 3:4 print PNG (3600 × 4800, smaller on phones), with maptoposter-style fades, a letter-spaced title you can edit, the year, route count, miles and the centre rounded to two decimals |
 | Performance | FTP and its history, the power curve and five-point profile, fitness/fatigue/form, Garmin-scale acute and chronic load with load focus, and cycling VO2max with its trend |
 | Garage | Bikes and mileage, plus a maintenance log |
 | Year in review | A scroll-driven infographic of one year in 11 chapters, ending with a summary card that downloads as a PNG |
@@ -571,3 +573,16 @@ make terraform-validate
 - [Cost strategy](docs/architecture/COST_STRATEGY.md)
 - [Architecture decision records](docs/decisions/README.md)
 - [MCP server](mcp/README.md)
+
+## Credits
+
+- **Heatmap poster themes:** colours and poster layout adapted from
+  [maptoposter](https://github.com/originalankur/maptoposter) by Ankur Gupta,
+  MIT licensed; the notice is kept in
+  `apps/web/lib/training/poster/THIRD_PARTY_NOTICES`.
+- **Poster map tiles:** [OpenFreeMap](https://openfreemap.org), in the
+  [OpenMapTiles](https://www.openmaptiles.org/) schema, with data
+  © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors. The
+  credit appears on the map and on every exported poster.
+- **Standard basemap:** © [CARTO](https://carto.com/attributions), data ©
+  OpenStreetMap contributors.
