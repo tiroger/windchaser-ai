@@ -227,3 +227,116 @@ def recent_bests(acts, until, days: int = 365) -> dict[int, float]:
         for k, v in (pb or {}).items():
             out[int(k)] = max(out.get(int(k), 0.0), float(v))
     return out
+
+
+# --------------------------------------------------------------------------
+# analysis helpers used by notebook 02
+# --------------------------------------------------------------------------
+
+
+def add_fitness_reference(mm, acts, days: int = 90):
+    """Relative power: each ride-bin MMP over the best 1 Hz power for that
+    duration in the `days` before the ride. Removes the slow drift of fitness
+    across years, so rides from different seasons share one scale."""
+    out = mm.copy()
+    keys = out[["start_local", "duration_s"]].drop_duplicates()
+    ref = {
+        (r.start_local, r.duration_s): fitness_reference(acts, r.start_local, int(r.duration_s), days)
+        for r in keys.itertuples()
+    }
+    out["reference_w"] = [ref[(t, d)] for t, d in zip(out["start_local"], out["duration_s"])]
+    out["relative"] = out["mmp_w"] / out["reference_w"]
+    return out
+
+
+def composition_table(mm, duration_s: int, bins=(1, 2, 3, 4), tau: float = 0.9):
+    """Upper quantile of MMP in the fresh bin against a later bin, two ways:
+    across every ride, and within the cohort of rides that reached the later
+    bin. The gap between the two is the composition bias of pooling."""
+    import pandas as pd
+
+    sub = mm[mm["duration_s"] == duration_s]
+    reach = sub.groupby("activity_id")["bin"].transform("max")
+    rows = []
+    for b in bins:
+        cohort = sub[reach >= b]
+        fresh_all = sub[sub["bin"] == 0]["mmp_w"].quantile(tau)
+        late_all = sub[sub["bin"] == b]["mmp_w"].quantile(tau)
+        fresh_c = cohort[cohort["bin"] == 0]["mmp_w"].quantile(tau)
+        late_c = cohort[cohort["bin"] == b]["mmp_w"].quantile(tau)
+        rows.append(
+            {
+                "bin": b,
+                "work_from_kj": b * 500,
+                "rides_reaching": int(cohort["activity_id"].nunique()),
+                "pooled_ratio": late_all / fresh_all,
+                "cohort_ratio": late_c / fresh_c,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def compare_forms(frame, y_col: str = "relative", tau: float = 0.9, n_splits: int = 5, late_kj: float = 1000.0, seed: int = 0):
+    """Each envelope form fitted on all rides, and scored on held-out rides:
+    pinball loss overall and exceedance of the envelope on late windows."""
+    import pandas as pd
+
+    rows, envs = [], {}
+    w = frame["work_at_kj"].to_numpy()
+    y = frame[y_col].to_numpy()
+    folds = grouped_folds(frame["activity_id"].to_numpy(), n_splits, seed)
+    for form in FORMS:
+        env = fit_envelope(w, y, form, tau)
+        envs[form] = env
+        loss = 0.0
+        exc = [0, 0]
+        for tr, te in folds:
+            e = fit_envelope(w[tr], y[tr], form, tau)
+            q = e.predict(w[te])
+            loss += _pinball(y[te], q, tau) * len(te)
+            late = w[te] >= late_kj
+            exc[0] += int(np.sum(y[te][late] > q[late]))
+            exc[1] += int(late.sum())
+        rows.append(
+            {
+                "form": form,
+                "cv_pinball": loss / len(y),
+                "late_exceedance": exc[0] / max(exc[1], 1),
+                "late_n": exc[1],
+                "drop_at_1500": env.drop_at(1500.0),
+                "params": ", ".join(f"{p:.3g}" for p in env.params) or "-",
+            }
+        )
+    return pd.DataFrame(rows), envs
+
+
+def exceedance_by_bin(frame, envs: dict, y_col: str = "relative", n_splits: int = 5, seed: int = 0):
+    """Held-out exceedance per work bin and form: a calibrated envelope sits
+    near (1 - tau) in every bin, a wrong shape drifts with work."""
+    import pandas as pd
+
+    w = frame["work_at_kj"].to_numpy()
+    y = frame[y_col].to_numpy()
+    b = frame["bin"].to_numpy()
+    rows = []
+    folds = grouped_folds(frame["activity_id"].to_numpy(), n_splits, seed)
+    for form, env in envs.items():
+        above = np.zeros(len(y), bool)
+        for tr, te in folds:
+            e = fit_envelope(w[tr], y[tr], form, env.tau)
+            above[te] = y[te] > e.predict(w[te])
+        for k in np.unique(b):
+            m = b == k
+            rows.append({"form": form, "bin": int(k), "work_from_kj": int(k) * 500, "exceedance": float(above[m].mean()), "n": int(m.sum())})
+    return pd.DataFrame(rows)
+
+
+def within_ride_slope(mm, duration_s: int) -> tuple[float, int]:
+    """Fixed-effects (within-ride) slope of log MMP on work done, per 1000 kJ:
+    the average decline in how hard the rider *does* go, not how hard they can."""
+    sub = mm[(mm["duration_s"] == duration_s)].copy()
+    sub = sub[sub.groupby("activity_id")["bin"].transform("size") >= 2]
+    ly = np.log(sub["mmp_w"])
+    ly_d = ly - ly.groupby(sub["activity_id"]).transform("mean")
+    w_d = sub["work_at_kj"] - sub.groupby("activity_id")["work_at_kj"].transform("mean")
+    return float(np.sum(ly_d * w_d) / np.sum(w_d**2) * 1000.0), int(sub["activity_id"].nunique())

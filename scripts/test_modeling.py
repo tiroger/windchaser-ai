@@ -349,6 +349,49 @@ def test_theme_registers() -> None:
     assert charts.theme()["config"]["range"]["category"][:2] == [charts.WIND, charts.EFFORT]
 
 
+def test_compare_forms_prefers_a_decline_when_there_is_one() -> None:
+    rng = np.random.default_rng(6)
+    rows = []
+    for ride in range(120):
+        for b in range(4):
+            w = b * 500 + rng.uniform(0, 500)
+            ceiling = 1.0 - 0.0001 * w
+            rows.append({"activity_id": str(ride), "bin": b, "work_at_kj": w, "relative": ceiling * rng.uniform(0.6, 1.0) ** 0.5})
+    frame = pd.DataFrame(rows)
+    table, envs = durability.compare_forms(frame, n_splits=4)
+    t = table.set_index("form")
+    assert t.loc["linear", "cv_pinball"] < t.loc["flat", "cv_pinball"], t
+    assert t.loc["flat", "late_exceedance"] < 0.1 < t.loc["flat", "late_exceedance"] + 0.2
+    exc = durability.exceedance_by_bin(frame, {"flat": envs["flat"]}, n_splits=4)
+    flat = exc.sort_values("bin").exceedance.to_numpy()
+    assert flat[0] > flat[-1], "a flat envelope is exceeded more fresh than late"
+
+
+def test_composition_table_compares_like_with_like() -> None:
+    # Short hard rides (only bin 0) and long easy ones: pooled looks like a big
+    # decline, the cohort that reaches the late bin shows none.
+    rows = [{"activity_id": f"s{i}", "duration_s": 1200, "bin": 0, "mmp_w": 300.0} for i in range(50)]
+    for i in range(50):
+        rows += [{"activity_id": f"l{i}", "duration_s": 1200, "bin": b, "mmp_w": 200.0} for b in range(3)]
+    t = durability.composition_table(pd.DataFrame(rows), 1200, bins=(2,)).iloc[0]
+    assert t.pooled_ratio < 0.8 and abs(t.cohort_ratio - 1.0) < 1e-9, t
+
+
+def test_section_power_is_time_weighted_per_section() -> None:
+    stream = _stream(n=200, dt=5.0)
+    stream["watts"] = np.where(np.arange(200) < 100, 100.0, 300.0)
+    secs = pd.DataFrame({"start_m": [0.0, 5000.0], "length_m": [5000.0, 5000.0]})
+    p = features.section_power(stream, secs)
+    assert np.allclose(p, [100.0, 300.0]), p
+
+
+def test_planner_default_power_follows_the_rider_model() -> None:
+    _, secs = _hilly_course()
+    model = {"cp_w": 200.0, "w_prime_j": 10000.0, "grade_w": 0.0, "grade_min": 0.0, "grade_max": 0.0}
+    w = pacing.planner_default_power(secs, model, Rider(mass_kg=75, cda=0.3))
+    assert 200.0 < w < 230.0, w  # CP plus W' over a ride of tens of minutes
+
+
 def main() -> None:
     print("Modeling workspace")
     for name, fn in sorted(globals().items()):

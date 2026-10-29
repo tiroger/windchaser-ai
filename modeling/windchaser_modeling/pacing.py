@@ -338,3 +338,33 @@ def replay_ride(stream, sections, rider: Rider, phys: Physiology, wind_from_deg=
         "course": course,
         "section_power": actual,
     }
+
+
+def planner_default_power(sections, rider_model: dict, rider: Rider) -> float:
+    """What the planner assumes when the rider has not said: the fitted rider
+    model's power for a ride this long at this route's mean grade, in calm air
+    (route-forecast.ts defaultPower, through the production fixed point)."""
+    from cycling_analytics.rider import RiderModel, mean_grade, predict_time
+
+    from .features import as_sections
+
+    secs = as_sections(sections)
+    model = RiderModel(
+        rider_model["cp_w"], rider_model["w_prime_j"], rider_model["grade_w"], 0,
+        rider_model.get("grade_min", 0.0), rider_model.get("grade_max", 0.0),
+    )
+    calm = {"wind_from_deg": 0.0, "wind_speed_ms": 0.0}
+    t = predict_time(secs, model, calm, rider)
+    return float(model.power_at(t, mean_grade(secs)))
+
+
+def compare_plans(sections, rider: Rider, phys: Physiology, mean_power_w: float, vi_cap: float,
+                  wind_from_deg: float = 0.0, wind_speed_ms: float = 0.0, rho: float = 1.225,
+                  p_max: float | None = None) -> dict:
+    """Constant, durability-faded and optimised plans on one course."""
+    course = make_course(sections, wind_from_deg, wind_speed_ms, rho)
+    table = SpeedTable(course, rider, p_max=max(900.0, (p_max or 0) + 20))
+    const = constant_plan(table, mean_power_w, phys)
+    faded = faded_plan(table, mean_power_w, phys) if phys.durability is not None else None
+    opt = optimise(table, mean_power_w, phys, vi_cap=vi_cap, p_max=p_max)
+    return {"course": course, "table": table, "constant": const, "faded": faded, "optimised": opt}
