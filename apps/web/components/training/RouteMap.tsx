@@ -2,15 +2,17 @@
 
 import { LngLatBounds, MapLibreMap, NavigationControl, type GeoJSONSource } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { alpha } from "@/lib/training/color";
+import { homeFocus, nearFocus as near } from "@/lib/training/heatmap-focus";
 import { decodePolyline } from "@/lib/training/polyline";
 
 import { useChartPalette } from "./Chart";
 import { BASEMAPS } from "./mapStyle";
 
-export type MapRoute = { id: string; polyline: string };
+/** `date` (YYYY-MM-DD) lets a heatmap tell recent riding from old. */
+export type MapRoute = { id: string; polyline: string; date?: string };
 
 type FeatureCollection = {
   type: "FeatureCollection";
@@ -21,16 +23,16 @@ type FeatureCollection = {
   }>;
 };
 
-const median = (values: number[]) =>
-  [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
-
 /**
  * Bounds covering the routes, or for a heatmap only those starting within
- * ~150 km of the median start, so a few rides abroad don't zoom out to the world.
+ * ~150 km of its focus, so rides elsewhere don't zoom out to the continent.
+ * The focus is the rider's position when given and some routes start near it,
+ * otherwise where they have ridden most lately.
  */
 function toGeoJson(
   routes: MapRoute[],
   focusOnHome: boolean,
+  position: number[] | null,
 ): { data: FeatureCollection; bounds: LngLatBounds | null } {
   let bounds: LngLatBounds | null = null;
   const lines = routes.map((route) => ({
@@ -39,20 +41,21 @@ function toGeoJson(
   }));
   const starts = lines
     .filter((line) => line.coordinates.length)
-    .map((line) => line.coordinates[0]);
-  const center =
-    focusOnHome && starts.length > 2
-      ? [median(starts.map(([lng]) => lng)), median(starts.map(([, lat]) => lat))]
-      : null;
+    .map((line) => ({ date: line.route.date ?? "", start: line.coordinates[0] }));
+  const center = !focusOnHome
+    ? null
+    : position && starts.some(({ start }) => near(start, position))
+      ? position
+      : homeFocus(starts);
+  const framed: number[][] = [];
   const features = lines.flatMap(({ route, coordinates }) => {
     if (coordinates.length < 2) return [];
-    const [lng0, lat0] = coordinates[0];
-    const nearby =
-      !center || (Math.abs(lng0 - center[0]) < 1.8 && Math.abs(lat0 - center[1]) < 1.4);
-    if (nearby) {
+    if (!center) {
       for (const [lng, lat] of coordinates) {
         bounds = bounds ? bounds.extend([lng, lat]) : new LngLatBounds([lng, lat], [lng, lat]);
       }
+    } else if (near(coordinates[0], center)) {
+      framed.push(...coordinates);
     }
     return [
       {
@@ -62,7 +65,20 @@ function toGeoJson(
       },
     ];
   });
+  if (framed.length) {
+    // The middle 96% of the heatmap's points: a handful of long rides away
+    // from home would otherwise shrink the roads ridden every week to a speck.
+    const [west, east] = spread(framed.map(([lng]) => lng));
+    const [south, north] = spread(framed.map(([, lat]) => lat));
+    bounds = new LngLatBounds([west, south], [east, north]);
+  }
   return { data: { type: "FeatureCollection", features }, bounds };
+}
+
+function spread(values: number[]): [number, number] {
+  const sorted = [...values].sort((a, b) => a - b);
+  const at = (q: number) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))];
+  return [at(0.02), at(0.98)];
 }
 
 /**
@@ -88,7 +104,30 @@ export default function RouteMap({
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<MapLibreMap | null>(null);
   const onSelectRef = useRef(onSelect);
-  const geo = useMemo(() => toGeoJson(routes, variant === "heat"), [routes, variant]);
+  const heatmap = variant === "heat";
+  const [position, setPosition] = useState<number[] | null>(null);
+  const geo = useMemo(() => toGeoJson(routes, heatmap, position), [routes, heatmap, position]);
+
+  // Frame where the rider is, as the wind view does -- but only when they have
+  // already allowed it. A heatmap is no reason to raise a permission prompt.
+  useEffect(() => {
+    if (!heatmap || !navigator.permissions || !("geolocation" in navigator)) return;
+    let cancelled = false;
+    navigator.permissions
+      .query({ name: "geolocation" })
+      .then((status) => {
+        if (status.state !== "granted" || cancelled) return;
+        navigator.geolocation.getCurrentPosition(
+          (pos) => !cancelled && setPosition([pos.coords.longitude, pos.coords.latitude]),
+          () => undefined,
+          { timeout: 8000, maximumAge: 300000 },
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [heatmap]);
   const geoRef = useRef(geo);
 
   useEffect(() => {

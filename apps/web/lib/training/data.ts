@@ -564,9 +564,14 @@ export async function loadPublicRouteProfile(id: string): Promise<RouteProfile |
 
 export type HeatRoute = { id: string; type: string; date: string; polyline: string };
 
-/** Every mapped activity's route, ends trimmed, for the heatmap. */
+/**
+ * Every mapped outdoor activity's route, ends trimmed, for the heatmap. Virtual
+ * rides are left out: their coordinates place Zwift's worlds on the real map,
+ * Watopia in the Pacific among them.
+ */
 export async function loadPublicHeatmap(): Promise<HeatRoute[]> {
   return (await loadRoutes()).flatMap((activity) => {
+    if (/virtual/i.test(activity.type)) return [];
     const polyline = publicPolyline(activity.polyline);
     return polyline
       ? [{ id: activity.id, type: activity.type, date: activity.date.slice(0, 10), polyline }]
