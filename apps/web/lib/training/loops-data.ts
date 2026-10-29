@@ -1,5 +1,7 @@
 import "server-only";
 
+import { DEFAULT_RIDER } from "@/lib/physics";
+import { calibrationTable } from "@/lib/server/calibration";
 import {
   loadActivityRecords,
   loadEffortHistoryObject,
@@ -19,9 +21,12 @@ import {
   activitySegments,
   linkEfforts,
   parseEffortHistory,
+  stillAirIndex,
   type EffortHistory,
   type SegmentEffortRow,
+  type StillAirIndex,
 } from "@/lib/training/segments";
+import type { Rider } from "@/lib/types";
 
 /**
  * Loops and segment history as the pages and APIs serve them: activity IDs
@@ -131,31 +136,51 @@ export async function loadTopLoops(
 
 // ------------------------------------------------------------ segments --
 
-type SegmentCache = {
+export type SegmentCache = {
   key: string;
   history: EffortHistory;
   links: Map<number, string>;
   dates: Map<string, string>;
+  /** The rider the still-air times were solved with: the wind view's calibrated one. */
+  rider: Rider;
+  stillAir: StillAirIndex;
 };
 
 let segmentCache: SegmentCache | null = null;
 
-async function segmentIndex(): Promise<SegmentCache> {
-  const [activities, efforts] = await Promise.all([
+/**
+ * The wind view's rider: its fitted mass and frontal area over the default
+ * rolling resistance and drivetrain, as riderFor() in lib/physics.ts builds it.
+ * Still-air times must be solved with the same rider the predictions use, or
+ * the two stop being comparable.
+ */
+async function calibratedRider(): Promise<Rider> {
+  const model = (await calibrationTable()).rider;
+  return model ? { ...DEFAULT_RIDER, mass_kg: model.mass_kg, cda: model.cda } : DEFAULT_RIDER;
+}
+
+/**
+ * Effort history, linked to activities and measured in still air. Recomputed
+ * only when the activities or efforts objects change.
+ */
+export async function segmentIndex(): Promise<SegmentCache> {
+  const [activities, efforts, rider] = await Promise.all([
     loadActivityRecords(),
     loadEffortHistoryObject(),
+    calibratedRider(),
   ]);
-  const key = `${activities.etag}#${activities.value.length}|${efforts.etag}`;
+  const key = `${activities.etag}#${activities.value.length}|${efforts.etag}|${rider.mass_kg}/${rider.cda}`;
   if (segmentCache?.key === key) return segmentCache;
   const history = parseEffortHistory(efforts.value);
   const links = linkEfforts(history, activities.value);
   const dates = new Map(activities.value.map((record) => [record.id, record.date]));
-  segmentCache = { key, history, links, dates };
+  const stillAir = stillAirIndex(history, rider);
+  segmentCache = { key, history, links, dates, rider, stillAir };
   return segmentCache;
 }
 
 /** This activity's efforts on WindChaser's tracked segments, each ranked against your history. */
 export async function loadActivitySegments(activityId: string): Promise<SegmentEffortRow[]> {
-  const { history, links, dates } = await segmentIndex();
-  return activitySegments(activityId, history, links, dates);
+  const { history, links, dates, stillAir } = await segmentIndex();
+  return activitySegments(activityId, history, links, dates, stillAir);
 }
