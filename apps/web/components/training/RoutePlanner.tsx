@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
-import "@/app/training/planner.css";
+import "@/app/styles/planner.css";
 import { compassLabel } from "@/lib/geo";
 import { formatHours, formatNumber } from "@/lib/training/activity-types";
 import { mix, type ChartPalette } from "@/lib/training/color";

@@ -1,40 +1,44 @@
 /*
   Ride planner on a saved route (components/training/RoutePlanner.tsx).
 
-  Same rules as training.css: everything under .training, every colour a
+  Same rules as training.css, every colour a
   WindChaser token or a color-mix() of one. Faster than calm air leans to
   --data-open and slower to --data-effort, the pair the wind view uses for
   tailwind and headwind, around a neutral surface midpoint.
+
+  Shared by Training and the wind page's Routes mode, so every selector is
+  scoped to either .training or .wind-routes (components/RoutesView.tsx) and
+  neither leaks into the rest of the wind view.
 */
 
-.training .t-planner {
+:is(.training, .wind-routes) .t-planner {
   display: flex;
   flex-direction: column;
   gap: 1rem;
 }
 
-.training .t-planner .t-card-head {
+:is(.training, .wind-routes) .t-planner .t-card-head {
   margin-bottom: 0;
 }
 
-.training .t-plan-subtitle {
+:is(.training, .wind-routes) .t-plan-subtitle {
   margin-top: 0.1rem;
   font-size: var(--step-0);
   font-weight: 540;
   letter-spacing: -0.016em;
 }
 
-.training .t-planner .is-faster {
+:is(.training, .wind-routes) .t-planner .is-faster {
   color: var(--open);
 }
 
-.training .t-planner .is-slower {
+:is(.training, .wind-routes) .t-planner .is-slower {
   color: var(--warn);
 }
 
 /* ----------------------------------------------------------------- power -- */
 
-.training .t-plan-power {
+:is(.training, .wind-routes) .t-plan-power {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
@@ -44,13 +48,13 @@
   background: var(--surface-2);
 }
 
-.training .t-plan-power-label {
+:is(.training, .wind-routes) .t-plan-power-label {
   color: var(--ink-2);
   font-size: var(--step--1);
   font-weight: 500;
 }
 
-.training .t-plan-power-number {
+:is(.training, .wind-routes) .t-plan-power-number {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -58,12 +62,12 @@
   font-size: var(--step--1);
 }
 
-.training .t-plan-power-number .t-input {
+:is(.training, .wind-routes) .t-plan-power-number .t-input {
   width: 4.6rem;
   text-align: right;
 }
 
-.training .t-plan-power-note {
+:is(.training, .wind-routes) .t-plan-power-note {
   grid-column: 1 / -1;
   color: var(--ink-3);
   font-size: var(--step--2);
@@ -71,13 +75,13 @@
 
 /* ---------------------------------------------------------- best window -- */
 
-.training .t-plan-best {
+:is(.training, .wind-routes) .t-plan-best {
   display: flex;
   flex-direction: column;
   gap: 0.7rem;
 }
 
-.training .t-plan-headline {
+:is(.training, .wind-routes) .t-plan-headline {
   max-width: 68ch;
   font-size: var(--step-1);
   font-weight: 500;
@@ -86,7 +90,7 @@
   text-wrap: pretty;
 }
 
-.training .t-plan-kicker {
+:is(.training, .wind-routes) .t-plan-kicker {
   display: block;
   margin-bottom: 0.15rem;
   color: var(--accent);
@@ -96,13 +100,13 @@
   text-transform: uppercase;
 }
 
-.training .t-plan-windows {
+:is(.training, .wind-routes) .t-plan-windows {
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem;
 }
 
-.training .t-plan-window {
+:is(.training, .wind-routes) .t-plan-window {
   display: grid;
   grid-template-columns: auto auto;
   align-items: baseline;
@@ -116,35 +120,35 @@
   transition: background 130ms ease;
 }
 
-.training .t-plan-window strong {
+:is(.training, .wind-routes) .t-plan-window strong {
   color: var(--ink);
   font-weight: 500;
 }
 
-.training .t-plan-window small {
+:is(.training, .wind-routes) .t-plan-window small {
   grid-column: 1 / -1;
   font-size: var(--step--2);
 }
 
-.training .t-plan-window:hover {
+:is(.training, .wind-routes) .t-plan-window:hover {
   background: var(--surface-3);
 }
 
-.training .t-plan-window[aria-pressed="true"] {
+:is(.training, .wind-routes) .t-plan-window[aria-pressed="true"] {
   background: var(--accent-wash);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 /* --------------------------------------------------------------- matrix -- */
 
-.training .t-plan-matrix-wrap {
+:is(.training, .wind-routes) .t-plan-matrix-wrap {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
   min-width: 0;
 }
 
-.training .t-plan-readout {
+:is(.training, .wind-routes) .t-plan-readout {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -154,52 +158,52 @@
   font-size: var(--step--1);
 }
 
-.training .t-plan-readout strong {
+:is(.training, .wind-routes) .t-plan-readout strong {
   color: var(--ink);
   font-weight: 540;
 }
 
-.training .t-plan-matrix {
+:is(.training, .wind-routes) .t-plan-matrix {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.training .t-plan-hours,
-.training .t-plan-row {
+:is(.training, .wind-routes) .t-plan-hours,
+:is(.training, .wind-routes) .t-plan-row {
   display: grid;
   grid-template-columns: 3.6rem repeat(24, minmax(0, 1fr));
   gap: 2px;
 }
 
-.training .t-plan-hours {
+:is(.training, .wind-routes) .t-plan-hours {
   color: var(--ink-3);
   font-family: var(--font-mono), monospace;
   font-size: var(--step--2);
 }
 
-.training .t-plan-hours span {
+:is(.training, .wind-routes) .t-plan-hours span {
   padding-left: 0.2rem;
   border-left: 1px solid var(--line);
 }
 
-.training .t-plan-hours span:first-child {
+:is(.training, .wind-routes) .t-plan-hours span:first-child {
   border-left: 0;
 }
 
-.training .t-plan-day {
+:is(.training, .wind-routes) .t-plan-day {
   align-self: center;
   color: var(--ink-2);
   font-size: var(--step--2);
   white-space: nowrap;
 }
 
-.training .t-plan-gridcell {
+:is(.training, .wind-routes) .t-plan-gridcell {
   display: block;
   min-width: 0;
 }
 
-.training .t-plan-cell {
+:is(.training, .wind-routes) .t-plan-cell {
   position: relative;
   display: block;
   width: 100%;
@@ -212,9 +216,9 @@
 
 /* Night is dimmed toward the page and hatched, so the scale still reads but
    daylight stands forward, and the difference does not rest on colour. */
-.training .t-plan-cell[data-daylight="1"],
-.training .t-plan-cell[data-daylight="0"],
-.training .t-plan-swatch.is-night {
+:is(.training, .wind-routes) .t-plan-cell[data-daylight="1"],
+:is(.training, .wind-routes) .t-plan-cell[data-daylight="0"],
+:is(.training, .wind-routes) .t-plan-swatch.is-night {
   background-image: repeating-linear-gradient(
     135deg,
     color-mix(in srgb, var(--ground) 55%, transparent) 0 2px,
@@ -222,27 +226,27 @@
   );
 }
 
-.training .t-plan-cell[data-daylight="0"],
-.training .t-plan-swatch.is-night {
+:is(.training, .wind-routes) .t-plan-cell[data-daylight="0"],
+:is(.training, .wind-routes) .t-plan-swatch.is-night {
   background-image:
     repeating-linear-gradient(135deg, color-mix(in srgb, var(--ink) 14%, transparent) 0 1px, transparent 1px 4px),
     linear-gradient(color-mix(in srgb, var(--ground) 62%, transparent), color-mix(in srgb, var(--ground) 62%, transparent));
 }
 
-.training .t-plan-cell:disabled,
-.training .t-plan-cell.is-empty {
+:is(.training, .wind-routes) .t-plan-cell:disabled,
+:is(.training, .wind-routes) .t-plan-cell.is-empty {
   background: transparent;
   box-shadow: inset 0 0 0 1px var(--line-soft);
   cursor: default;
 }
 
-.training .t-plan-cell:not(:disabled):hover {
+:is(.training, .wind-routes) .t-plan-cell:not(:disabled):hover {
   outline: 1px solid var(--ink-3);
   outline-offset: 0;
   z-index: 1;
 }
 
-.training .t-plan-cell[data-best]::after {
+:is(.training, .wind-routes) .t-plan-cell[data-best]::after {
   content: "";
   position: absolute;
   inset: 50% auto auto 50%;
@@ -254,13 +258,13 @@
   transform: translate(-50%, -50%);
 }
 
-.training .t-plan-cell[aria-pressed="true"] {
+:is(.training, .wind-routes) .t-plan-cell[aria-pressed="true"] {
   outline: 2px solid var(--ink);
   outline-offset: 0;
   z-index: 2;
 }
 
-.training .t-plan-legend {
+:is(.training, .wind-routes) .t-plan-legend {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -269,23 +273,23 @@
   font-size: var(--step--2);
 }
 
-.training .t-plan-legend > span {
+:is(.training, .wind-routes) .t-plan-legend > span {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
 }
 
-.training .t-plan-ramp i {
+:is(.training, .wind-routes) .t-plan-ramp i {
   width: 16px;
   height: 10px;
   border-radius: 2px;
 }
 
-.training .t-plan-ramp small {
+:is(.training, .wind-routes) .t-plan-ramp small {
   font-size: inherit;
 }
 
-.training .t-plan-swatch {
+:is(.training, .wind-routes) .t-plan-swatch {
   position: relative;
   width: 16px;
   height: 10px;
@@ -293,11 +297,11 @@
   background: color-mix(in srgb, var(--data-open) 72%, var(--surface-2));
 }
 
-.training .t-plan-swatch.is-best {
+:is(.training, .wind-routes) .t-plan-swatch.is-best {
   background: var(--surface-3);
 }
 
-.training .t-plan-swatch.is-best::after {
+:is(.training, .wind-routes) .t-plan-swatch.is-best::after {
   content: "";
   position: absolute;
   inset: 50% auto auto 50%;
@@ -310,7 +314,7 @@
 
 /* ----------------------------------------------------------- map + hour -- */
 
-.training .t-plan-body {
+:is(.training, .wind-routes) .t-plan-body {
   display: grid;
   grid-template-columns: minmax(0, 1.55fr) minmax(280px, 1fr);
   gap: 1rem 1.4rem;
@@ -318,16 +322,16 @@
   border-top: 1px solid var(--line-soft);
 }
 
-.training .t-plan-map,
-.training .t-plan-detail {
+:is(.training, .wind-routes) .t-plan-map,
+:is(.training, .wind-routes) .t-plan-detail {
   min-width: 0;
 }
 
-.training .t-plan-map-frame {
+:is(.training, .wind-routes) .t-plan-map-frame {
   position: relative;
 }
 
-.training .t-plan-compass {
+:is(.training, .wind-routes) .t-plan-compass {
   position: absolute;
   left: 0.6rem;
   top: 0.6rem;
@@ -344,46 +348,46 @@
   pointer-events: none;
 }
 
-.training .t-plan-compass svg {
+:is(.training, .wind-routes) .t-plan-compass svg {
   width: 34px;
   height: 34px;
 }
 
-.training .t-plan-compass circle {
+:is(.training, .wind-routes) .t-plan-compass circle {
   fill: none;
   stroke: var(--line);
   stroke-width: 1.5;
 }
 
-.training .t-plan-compass path {
+:is(.training, .wind-routes) .t-plan-compass path {
   fill: var(--wind);
 }
 
-.training .t-plan-compass line {
+:is(.training, .wind-routes) .t-plan-compass line {
   stroke: var(--wind);
   stroke-width: 2.4;
   stroke-linecap: round;
 }
 
-.training .t-plan-detail .hero-number {
+:is(.training, .wind-routes) .t-plan-detail .hero-number {
   margin: 0.25rem 0 0.4rem;
 }
 
-.training .t-plan-phrase {
+:is(.training, .wind-routes) .t-plan-phrase {
   margin-bottom: 0.6rem;
   color: var(--ink-2);
   font-size: var(--step--1);
 }
 
-.training .t-plan-detail .v.is-faster {
+:is(.training, .wind-routes) .t-plan-detail .v.is-faster {
   color: var(--open);
 }
 
-.training .t-plan-detail .v.is-slower {
+:is(.training, .wind-routes) .t-plan-detail .v.is-slower {
   color: var(--warn);
 }
 
-.training .t-plan-warning {
+:is(.training, .wind-routes) .t-plan-warning {
   margin-top: 0.6rem;
   padding: 0.5rem 0.7rem;
   border-radius: var(--radius-sm);
@@ -392,18 +396,18 @@
   font-size: var(--step--1);
 }
 
-.training .t-plan-strip {
+:is(.training, .wind-routes) .t-plan-strip {
   margin-top: 0.9rem;
 }
 
-.training .t-plan-strip svg {
+:is(.training, .wind-routes) .t-plan-strip svg {
   display: block;
   width: 100%;
   height: 72px;
   margin-top: 0.35rem;
 }
 
-.training .t-plan-strip-axis {
+:is(.training, .wind-routes) .t-plan-strip-axis {
   display: flex;
   justify-content: space-between;
   color: var(--ink-3);
@@ -411,57 +415,57 @@
 }
 
 @media (max-width: 980px) {
-  .training .t-plan-body {
+  :is(.training, .wind-routes) .t-plan-body {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 
 @media (max-width: 640px) {
-  .training .t-plan-power {
+  :is(.training, .wind-routes) .t-plan-power {
     grid-template-columns: minmax(0, 1fr) auto;
   }
 
-  .training .t-plan-power input[type="range"] {
+  :is(.training, .wind-routes) .t-plan-power input[type="range"] {
     grid-column: 1 / -1;
     grid-row: 2;
   }
 
-  .training .t-plan-hours,
-  .training .t-plan-row {
+  :is(.training, .wind-routes) .t-plan-hours,
+  :is(.training, .wind-routes) .t-plan-row {
     grid-template-columns: 2.6rem repeat(24, minmax(0, 1fr));
     gap: 1px;
   }
 
-  .training .t-plan-matrix {
+  :is(.training, .wind-routes) .t-plan-matrix {
     gap: 1px;
   }
 
-  .training .t-plan-cell {
+  :is(.training, .wind-routes) .t-plan-cell {
     height: 20px;
     border-radius: 2px;
   }
 
-  .training .t-plan-cell[data-best]::after {
+  :is(.training, .wind-routes) .t-plan-cell[data-best]::after {
     width: 4px;
     height: 4px;
   }
 
-  .training .t-plan-headline {
+  :is(.training, .wind-routes) .t-plan-headline {
     font-size: var(--step-0);
   }
 
-  .training .t-plan-windows {
+  :is(.training, .wind-routes) .t-plan-windows {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 0.3rem;
   }
 
-  .training .t-plan-window {
+  :is(.training, .wind-routes) .t-plan-window {
     grid-template-columns: minmax(0, 1fr) auto auto;
     gap: 0 0.7rem;
   }
 
-  .training .t-plan-window small {
+  :is(.training, .wind-routes) .t-plan-window small {
     grid-column: auto;
     grid-row: 1;
     grid-column-start: 3;
@@ -469,8 +473,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .training .t-plan-cell,
-  .training .t-plan-window {
+  :is(.training, .wind-routes) .t-plan-cell,
+  :is(.training, .wind-routes) .t-plan-window {
     transition: none;
   }
 }
