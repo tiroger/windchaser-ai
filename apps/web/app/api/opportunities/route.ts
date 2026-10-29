@@ -3,15 +3,18 @@ import {
   applyCalibration,
   savedOpportunityBundle,
 } from "@/lib/server/calibration";
+import { discoverNear, discoveryNotice } from "@/lib/server/discovery";
 import { stravaConfig } from "@/lib/server/env";
-import {
-  clusterRegions,
-  exploreSegments,
-  fetchAthlete,
-  fetchStarredSegments,
-  regionName,
-} from "@/lib/server/strava";
+import { trackedSegments } from "@/lib/server/segment-records";
+import { fetchAthlete, fetchStarredSegments } from "@/lib/server/strava";
 import { cellId, cellOf, fetchCells } from "@/lib/server/weather";
+import {
+  buildRegions,
+  mergeCandidates,
+  parseUsage,
+  type UsageEntry,
+} from "@/lib/segment-candidates";
+import { loadSegmentUsageObject } from "@/lib/training/data";
 import type { Bundle, LatLon, Region, Segment } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -20,13 +23,17 @@ export const dynamic = "force-dynamic";
  * Strava and Open-Meteo fail independently, so they degrade independently.
  * A Strava rate limit must not cost us a live forecast: segment geometry is
  * effectively static, while wind is the thing that actually changes.
+ *
+ * The candidates are what the rider rides: starred segments, the tracked
+ * segments with effort history, and segments discovered around the rider's
+ * position (see lib/segment-candidates.ts). Each source fails on its own.
  */
 type Freshness = "live" | "saved";
 
-const EXPLORE_RADIUS_KM = 12;
-const EXPLORE_LIMIT = 8;
-/** Beyond this from every known region, treat the rider as somewhere new. */
+/** Beyond this from every region, the rider is somewhere new. */
 const NEW_REGION_KM = 60;
+/** Saved discoveries within this of where discovery searched stand in when it fails. */
+const SAVED_DISCOVERY_KM = 40;
 
 interface SegmentCache {
   segments: Segment[];
@@ -36,21 +43,7 @@ interface SegmentCache {
 let starredCache: SegmentCache | null = null;
 const STARRED_TTL_MS = 60 * 60 * 1000;
 
-const exploredCache = new Map<string, { segments: Segment[]; fetchedAt: number }>();
-const EXPLORED_TTL_MS = 6 * 60 * 60 * 1000;
-
 const mid = (s: Segment): LatLon => s.points[Math.floor(s.points.length / 2)];
-
-/**
- * The saved bundle is a development convenience, not a deployment artifact. It
- * holds real ride locations and personal record times, so it is gitignored and
- * genuinely absent in a deployed environment. Its absence is normal and must
- * never fail a request: live data is the point, and the fallback only exists
- * for when a provider is unreachable.
- */
-// Resolution lives in the calibration module, which already knows how to read
-// the working copy first and S3 second.
-
 
 async function loadStarred(known?: Map<number, Segment>): Promise<SegmentCache> {
   if (starredCache && Date.now() - starredCache.fetchedAt < STARRED_TTL_MS) {
@@ -80,32 +73,44 @@ async function loadStarred(known?: Map<number, Segment>): Promise<SegmentCache> 
   return starredCache;
 }
 
-async function discoverAround(
-  lat: number,
-  lon: number,
-  skip: Set<number>,
-): Promise<Segment[]> {
-  const key = cellId(cellOf(lat, lon));
-  const hit = exploredCache.get(key);
-  if (hit && Date.now() - hit.fetchedAt < EXPLORED_TTL_MS) return hit.segments;
+/** segment-usage.json, or nothing: usage only refines the ranking. */
+async function loadUsage(): Promise<Map<number, UsageEntry>> {
+  try {
+    return parseUsage((await loadSegmentUsageObject()).value);
+  } catch (error) {
+    console.error(
+      "[opportunities] could not read segment usage:",
+      error instanceof Error ? error.message : error,
+    );
+    return new Map();
+  }
+}
 
-  const found = await exploreSegments(
-    lat,
-    lon,
-    EXPLORE_RADIUS_KM,
-    EXPLORE_LIMIT,
-    skip,
-  );
-  exploredCache.set(key, { segments: found, fetchedAt: Date.now() });
-  return found;
+/** Strava's town for a tracked segment, which the effort history does not record. */
+function withTowns(tracked: Segment[], known: Map<number, Segment>): Segment[] {
+  return tracked.map((segment) => {
+    const other = known.get(segment.id);
+    return other ? { ...segment, city: segment.city ?? other.city, state: segment.state ?? other.state } : segment;
+  });
+}
+
+/** Copies, so a cached segment never carries one request's region into the next. */
+const fresh = (segments: Segment[]): Segment[] =>
+  segments.map((s) => ({ ...s, sources: undefined, region_id: "", cell_id: "" }));
+
+/** A finite latitude and longitude from the query, or null. */
+function position(url: URL): LatLon | null {
+  const lat = url.searchParams.get("lat");
+  const lon = url.searchParams.get("lon");
+  if (!lat || !lon) return null;
+  const at: LatLon = [Number(lat), Number(lon)];
+  return Number.isFinite(at[0]) && Number.isFinite(at[1]) && Math.abs(at[0]) <= 90 && Math.abs(at[1]) <= 180
+    ? at
+    : null;
 }
 
 export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const latParam = url.searchParams.get("lat");
-  const lonParam = url.searchParams.get("lon");
-  const here: LatLon | null =
-    latParam && lonParam ? [Number(latParam), Number(lonParam)] : null;
+  const here = position(new URL(request.url));
 
   let segmentSource: Freshness = "live";
   let forecastSource: Freshness = "live";
@@ -141,17 +146,10 @@ export async function GET(request: Request) {
     notices.push("No Strava credentials found, so segments come from the last saved bundle.");
   } else {
     try {
-      // The saved bundle doubles as durable segment geometry. It exists anyway
-      // as the fallback for when Strava is unreachable, and reusing it here
-      // turns a starred refresh from twenty-seven Strava reads into one.
-      //
-      // What this trades away is the personal record carried on a segment
-      // record, which can then be as old as the bundle. For any segment with
-      // recorded efforts that does not matter: applyCalibration overwrites the
-      // target with best_moving_time_s, rebuilt daily by the worker from the
-      // effort history the webhook keeps current, and a moving-time best is the
-      // better comparison anyway. For the rest it is stale until the worker
-      // backfills them, which it is working through at a segment a day.
+      // The saved bundle doubles as durable segment geometry, which turns a
+      // starred refresh from twenty-seven Strava reads into one. The PR on a
+      // reused record can then be as old as the bundle; the effort history
+      // below replaces it wherever the rider has one.
       const stored = await loadSaved();
       const known = new Map<number, Segment>(
         (stored?.segments ?? []).map((s) => [s.id, s]),
@@ -173,78 +171,78 @@ export async function GET(request: Request) {
   }
 
   try {
-    const all: Segment[] = [];
-    const regions: Region[] = [];
+    const savedSegments = (await loadSaved())?.segments ?? [];
+    const towns = new Map<number, Segment>(
+      [...savedSegments, ...starred].map((s) => [s.id, s]),
+    );
 
-    const clusters = clusterRegions(starred);
-    clusters.forEach((cluster, index) => {
-      const id = `r${index}`;
-      const mids = cluster.map(mid);
-      const lat = mids.reduce((s, m) => s + m[0], 0) / mids.length;
-      const lon = mids.reduce((s, m) => s + m[1], 0) / mids.length;
-      for (const seg of cluster) {
-        seg.region_id = id;
-        all.push(seg);
+    // The tracked segments: the effort history's, with the rider's record on
+    // each. Losing them costs the history, not the starred segments.
+    let tracked: Segment[] = [];
+    try {
+      tracked = withTowns(await trackedSegments(), towns);
+    } catch (error) {
+      console.error(
+        "[opportunities] could not read the effort history:",
+        error instanceof Error ? error.message : error,
+      );
+      notices.push("Your segment history could not be read this time, so only starred segments are shown.");
+    }
+    const usage = await loadUsage();
+
+    // Discovery searches the rider's own position when there is one, and
+    // otherwise the region they ride most, which buildRegions puts first.
+    const known = mergeCandidates({ starred: fresh(starred), tracked: fresh(tracked) }, usage);
+    const ridden = buildRegions(known)[0];
+    const searchAt: LatLon | null = here ?? (ridden ? [ridden.lat, ridden.lon] : null);
+    const knownIds = new Set(known.map((s) => s.id));
+
+    let discovered: Segment[] = [];
+    if (searchAt && segmentSource === "live") {
+      try {
+        discovered = await discoverNear(searchAt, knownIds);
+      } catch (error) {
+        // Discovery is a bonus. Losing it must not cost the other sources.
+        notices.push(discoveryNotice(error));
       }
-      regions.push({
-        id,
-        name: regionName(cluster),
-        lat,
-        lon,
-        starred_count: cluster.length,
-      });
-    });
+    }
+    if (discovered.length === 0 && searchAt) {
+      // Whatever the saved bundle discovered near there stands in.
+      discovered = savedSegments.filter(
+        (s) =>
+          s.source === "discovered" &&
+          !knownIds.has(s.id) &&
+          haversineM(searchAt, mid(s)) < SAVED_DISCOVERY_KM * 1000,
+      );
+    }
 
-    // Discover around whichever region the rider is actually in. If they are
-    // nowhere near a starred region, explore their real position instead.
-    const known = new Set(all.map((s) => s.id));
-    let targetRegion: Region | null = null;
+    const all = mergeCandidates(
+      { starred: fresh(starred), tracked: fresh(tracked), discovered: fresh(discovered) },
+      usage,
+    );
+    const regions = buildRegions(all);
 
+    // The region the rider is in. Far from every region, they are somewhere
+    // new: whatever was discovered around them already forms its own region,
+    // and with nothing discovered an empty one says so.
+    let targetRegion: Region | null = regions[0] ?? null;
     if (here) {
-      let nearest: { region: Region; distance: number } | null = null;
-      for (const region of regions) {
-        const d = haversineM(here, [region.lat, region.lon]);
-        if (!nearest || d < nearest.distance) nearest = { region, distance: d };
-      }
-      if (nearest && nearest.distance < NEW_REGION_KM * 1000) {
-        targetRegion = nearest.region;
+      const closest = regions
+        .map((region) => ({ region, distance: haversineM(here, [region.lat, region.lon]) }))
+        .sort((a, b) => a.distance - b.distance)[0];
+      if (closest && closest.distance < NEW_REGION_KM * 1000) {
+        targetRegion = closest.region;
       } else {
-        const id = "here";
         targetRegion = {
-          id,
+          id: "here",
           name: "Around you",
           lat: here[0],
           lon: here[1],
           starred_count: 0,
+          segment_count: 0,
         };
         regions.unshift(targetRegion);
       }
-    } else if (regions.length > 0) {
-      targetRegion = regions[0];
-    }
-
-    if (targetRegion && segmentSource === "live") {
-      try {
-        const discovered = await discoverAround(
-          targetRegion.lat,
-          targetRegion.lon,
-          known,
-        );
-        for (const seg of discovered) {
-          seg.region_id = targetRegion!.id;
-          all.push(seg);
-        }
-        targetRegion.discovered_count = discovered.length;
-      } catch {
-        // Discovery is a bonus. Losing it must not cost the starred segments.
-        notices.push("Nearby segment discovery was unavailable this time.");
-      }
-    } else if (targetRegion) {
-      // Reuse whatever discovered segments the saved bundle already had.
-      const cached = ((await loadSaved())?.segments ?? []).filter(
-        (s) => s.source === "discovered" && !known.has(s.id),
-      );
-      for (const seg of cached) all.push(seg);
     }
 
     if (all.length === 0) {
