@@ -10,10 +10,10 @@ in either direction, when the data or the model changes.
 
 | # | Notebook | Question | Finding (at the time of writing) |
 |---|---|---|---|
-| 01 | [`01_physics_residual_model.py`](notebooks/01_physics_residual_model.py) | Can a learned model correct the physics segment-time prediction, and can conformal methods replace the hand-made σ? | No point correction beats production on future efforts (best: a constant shift, CI crossing zero). Production's σ under-covers (about 70% at a stated 80%); re-sizing it conformally gives calibrated 80% and 90% intervals. Ship the interval fix, not a model. |
-| 02 | [`02_durability_and_pacing.py`](notebooks/02_durability_and_pacing.py) | How much does sustainable power fall with work done, and what does variable pacing gain over the planner's constant power? | The 20-minute power ceiling falls by roughly a tenth to a sixth after 1,500 kJ; a durability envelope beats a flat one on held-out rides. Optimised pacing at the same average power saves a few percent on hilly routes, mostly on climbs. Replaying real rides confirms the physics' pacing sensitivity, slightly overstated. |
+| 01 | [`01_physics_residual_model.py`](notebooks/01_physics_residual_model.py) | Can a learned model correct the physics segment-time prediction, and can conformal methods replace the hand-made σ? | No point correction beats production on future efforts (the best is a constant shift whose confidence interval crosses zero). Production's σ under-covers; re-sizing it by a conformal factor gives calibrated 80% and 90% intervals. Ship the interval fix, not a model. |
+| 02 | [`02_durability_and_pacing.py`](notebooks/02_durability_and_pacing.py) | How much does sustainable power fall with work done, and what does variable pacing gain over the planner's constant power? | The power ceiling falls measurably with work done, and a durability envelope beats a flat one on held-out rides. Optimised pacing at the same average power saves a few percent on hilly routes, mostly on climbs. Replaying recorded rides confirms the physics' pacing sensitivity, slightly overstated. |
 
-The table summarises; the notebooks hold the numbers, computed at run time.
+The table summarises in words; the numbers live in the notebooks, computed at run time from private data, and are never committed.
 
 ## Running
 
