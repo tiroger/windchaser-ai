@@ -49,8 +49,8 @@ def quarterly_origins(first: pd.Timestamp, last: pd.Timestamp, warmup_years: flo
     Production rebuilds calibration on every scheduled run; a quarterly refit
     is a compromise between that and the cost of a refit (seconds each).
     """
-    start = (first + pd.DateOffset(years=int(warmup_years))).to_period("Q").start_time
-    start = start.tz_localize("UTC") if start.tzinfo is None else start
+    naive = first.tz_convert("UTC").tz_localize(None) if first.tzinfo else first
+    start = (naive + pd.DateOffset(years=int(warmup_years))).to_period("Q").start_time.tz_localize("UTC")
     out = []
     t = start
     while t <= last:
