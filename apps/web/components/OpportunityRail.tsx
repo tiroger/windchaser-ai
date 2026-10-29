@@ -12,6 +12,29 @@ export interface RankedRow {
   whenIso: string;
 }
 
+const MONTH = new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
+
+/**
+ * Where a segment came from, in a few words: starred, ridden (with how often),
+ * or discovered nearby. `long` adds when it was last ridden.
+ */
+export function sourceLabel(segment: Segment, long = false): string {
+  const sources = segment.sources ?? [segment.source];
+  const parts: string[] = [];
+  if (sources.includes("starred")) parts.push("Starred");
+  const attempts = segment.riding?.attempts ?? 0;
+  if (attempts > 0) {
+    parts.push(`ridden ${attempts}×`);
+    if (long && segment.riding?.last_ridden) {
+      parts.push(`last ${MONTH.format(new Date(segment.riding.last_ridden))}`);
+    }
+  } else if (sources.includes("discovered")) {
+    parts.push("discovered nearby");
+  }
+  const text = parts.join(" · ") || "Segment";
+  return text[0].toUpperCase() + text.slice(1);
+}
+
 /** Sequential ramp on the open-window hue; grey means a gate rejected it. */
 export function statusColour(score: number, gated: boolean): string {
   if (gated) return "var(--ink-3)";
@@ -139,7 +162,21 @@ export default function OpportunityRail({
                       </span>
                     </>
                   )}
-                  {row.segment.calibrated_power_w ? (
+                  <span className="tag" title={sourceLabel(row.segment, true)}>
+                    {(row.segment.sources ?? [row.segment.source]).includes("starred")
+                      ? "★"
+                      : row.segment.riding?.attempts
+                        ? `${row.segment.riding.attempts}×`
+                        : "new"}
+                  </span>
+                  {row.segment.record?.soft ? (
+                    <span
+                      className="tag"
+                      title="Your record here was set well below the power you hold now, or with a stop in it: any hard effort should beat it"
+                    >
+                      soft PR
+                    </span>
+                  ) : row.segment.calibrated_power_w ? (
                     <span className="tag">fitted</span>
                   ) : null}
                 </>
