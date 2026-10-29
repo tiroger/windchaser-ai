@@ -221,7 +221,6 @@ with a probability, and a confidence note from the model's backtest error.
 
 **Decision rule:** deterministic code computes every number; the language model
 only explains and retrieves.
-([ADR-0002](docs/decisions/0002-deterministic-alert-core.md))
 
 - **Briefing** (`lib/server/briefing.ts`):
   - Claude through Amazon Bedrock, falling back to the Anthropic API, then to a
