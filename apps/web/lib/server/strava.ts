@@ -1,6 +1,5 @@
 import "server-only";
 
-import { haversineM } from "../geo";
 import type { LatLon, Segment } from "../types";
 import { stravaConfig } from "./env";
 import { forgetStravaCredentials } from "./secrets";
@@ -70,6 +69,62 @@ export class StravaRateLimitError extends Error {
     this.name = "StravaRateLimitError";
   }
 }
+/**
+ * A refused Strava call, with what Strava said about it. The status and
+ * Strava's own message are what make a failure diagnosable; the request path
+ * is kept without its query, which can carry a position, and nothing here
+ * ever holds a token.
+ */
+export class StravaApiError extends Error {
+  readonly status: number;
+  readonly path: string;
+  readonly stravaMessage: string | null;
+  constructor(status: number, path: string, stravaMessage: string | null) {
+    super(
+      `Strava ${status} on ${path}${stravaMessage ? `: ${stravaMessage}` : ""}`,
+    );
+    this.name = "StravaApiError";
+    this.status = status;
+    this.path = path;
+    this.stravaMessage = stravaMessage;
+  }
+}
+
+/**
+ * Strava's error body is `{ message, errors: [{ resource, field, code }] }`.
+ * Only those fields are kept, truncated, so a failure log can say why without
+ * echoing an arbitrary response.
+ */
+export function stravaErrorMessage(body: unknown): string | null {
+  if (!body || typeof body !== "object") return null;
+  const { message, errors } = body as {
+    message?: unknown;
+    errors?: Array<{ resource?: unknown; field?: unknown; code?: unknown }>;
+  };
+  const parts: string[] = [];
+  if (typeof message === "string" && message) parts.push(message);
+  if (Array.isArray(errors)) {
+    for (const e of errors.slice(0, 3)) {
+      const fields = [e?.resource, e?.field, e?.code].filter(
+        (v): v is string => typeof v === "string" && v.length > 0,
+      );
+      if (fields.length) parts.push(fields.join(" "));
+    }
+  }
+  return parts.length ? parts.join("; ").slice(0, 200) : null;
+}
+
+/** A failure as a log line: class, status and Strava's message. Never a token. */
+export function describeStravaFailure(error: unknown): string {
+  if (error instanceof StravaApiError) {
+    return `${error.name} status=${error.status} path=${error.path} message=${
+      error.stravaMessage ?? "(none)"
+    }`;
+  }
+  if (error instanceof Error) return `${error.name}: ${error.message}`;
+  return `non-error thrown: ${typeof error}`;
+}
+
 const TOKEN_URL = "https://www.strava.com/oauth/token";
 
 interface TokenState {
@@ -130,7 +185,8 @@ async function api<T>(path: string): Promise<T> {
     throw new StravaRateLimitError();
   }
   if (!res.ok) {
-    throw new Error(`Strava ${res.status} on ${path}`);
+    const body = await res.json().catch(() => null);
+    throw new StravaApiError(res.status, path.split("?")[0], stravaErrorMessage(body));
   }
   return (await res.json()) as T;
 }
@@ -339,53 +395,4 @@ export async function exploreSegments(
     }
   }
   return out;
-}
-
-/**
- * Group segments into riding regions. A starred list spans continents, so an
- * averaged centre is meaningless; cluster first and treat each as a region.
- */
-export function clusterRegions(
-  segments: Segment[],
-  radiusKm = 80,
-): Segment[][] {
-  const mid = (s: Segment): LatLon => s.points[Math.floor(s.points.length / 2)];
-  const clusters: Segment[][] = [];
-
-  for (const seg of segments) {
-    const found = clusters.find((c) =>
-      c.some((other) => haversineM(mid(seg), mid(other)) < radiusKm * 1000),
-    );
-    if (found) found.push(seg);
-    else clusters.push([seg]);
-  }
-
-  let merged = true;
-  while (merged) {
-    merged = false;
-    outer: for (let i = 0; i < clusters.length; i++) {
-      for (let j = i + 1; j < clusters.length; j++) {
-        const near = clusters[i].some((a) =>
-          clusters[j].some((b) => haversineM(mid(a), mid(b)) < radiusKm * 1000),
-        );
-        if (near) {
-          clusters[i] = clusters[i].concat(clusters.splice(j, 1)[0]);
-          merged = true;
-          break outer;
-        }
-      }
-    }
-  }
-  return clusters.sort((a, b) => b.length - a.length);
-}
-
-export function regionName(cluster: Segment[]): string {
-  const counts = new Map<string, number>();
-  for (const s of cluster) {
-    if (!s.city) continue;
-    const key = s.state ? `${s.city}, ${s.state}` : s.city;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  if (counts.size === 0) return "Unnamed region";
-  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
 }

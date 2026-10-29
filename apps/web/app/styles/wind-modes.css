@@ -1,0 +1,294 @@
+/*
+  The wind page's frame for its two modes (components/WindPage.tsx), the
+  week's best chances (BestChances.tsx) and the still-air rows in segment
+  detail. Same rules as globals.css: tokens only, so light and dark resolve
+  there, and nothing here depends on Training's stylesheet.
+*/
+
+/* ------------------------------------------------------------- the bar -- */
+
+.wind-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem 1.2rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 1.4rem;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--ground);
+  min-width: 0;
+}
+
+.mode-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  flex-shrink: 0;
+}
+
+.mode-switch a {
+  padding: 0.3rem 0.95rem;
+  border-radius: var(--radius-pill);
+  color: var(--ink-2);
+  font-size: var(--step--1);
+  font-weight: 480;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 130ms ease, background 130ms ease;
+}
+
+.mode-switch a:hover {
+  color: var(--ink);
+}
+
+.mode-switch a[aria-selected="true"] {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-sm), inset 0 0 0 1px var(--line-soft);
+}
+
+/* On a phone the regions scroll sideways rather than stacking three deep. */
+@media (max-width: 640px) {
+  .wind-bar {
+    padding: 0.55rem 1rem;
+  }
+
+  .wind-regions {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    max-width: 100%;
+    margin: 0 -1rem;
+    padding: 0 1rem;
+  }
+
+  .wind-regions::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* A source note: where the nearby segments came from. Quiet, not a warning. */
+.rail-note {
+  color: var(--ink-3);
+  font-size: var(--step--2);
+}
+
+/* --------------------------------------------------------- chances -- */
+
+.chances {
+  margin: 0 1.4rem 0.85rem;
+  padding: 1rem 1.05rem 0.9rem;
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.chances-head .label {
+  display: block;
+  color: var(--accent);
+}
+
+.chances-head h3 {
+  margin: 0.15rem 0 0.55rem;
+  font-size: var(--step-1);
+  font-weight: 560;
+  letter-spacing: -0.02em;
+}
+
+.chance-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.chance-list li + li {
+  border-top: 1px solid var(--line-soft);
+}
+
+.chance {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "when gap"
+    "name gap"
+    "facts gap";
+  gap: 0.05rem 0.8rem;
+  width: 100%;
+  padding: 0.5rem 0.45rem;
+  margin: 0 -0.45rem;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  transition: background 130ms ease;
+  box-sizing: content-box;
+}
+
+.chance:hover {
+  background: var(--surface-2);
+}
+
+.chance[aria-pressed="true"] {
+  background: var(--accent-wash);
+}
+
+.chance-when {
+  grid-area: when;
+  color: var(--accent);
+  font-size: var(--step--2);
+}
+
+.chance-name {
+  grid-area: name;
+  font-size: var(--step--1);
+  font-weight: 520;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chance-facts {
+  grid-area: facts;
+  color: var(--ink-3);
+  font-size: var(--step--2);
+}
+
+.chance-facts .is-tail {
+  color: var(--open);
+}
+
+.chance-gap {
+  grid-area: gap;
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: var(--step-0);
+  letter-spacing: -0.03em;
+  color: var(--ink-2);
+}
+
+.chance-gap.is-beat {
+  color: var(--open);
+}
+
+.chance-gap small {
+  color: var(--ink-3);
+  font-size: var(--step--2);
+  letter-spacing: 0;
+}
+
+.chance-list.is-quiet .chance-name {
+  font-weight: 460;
+  color: var(--ink-2);
+}
+
+.chances-more {
+  margin-top: 0.55rem;
+}
+
+.chances-more summary {
+  cursor: pointer;
+  color: var(--ink-2);
+  font-size: var(--step--1);
+  font-weight: 480;
+  padding: 0.2rem 0;
+}
+
+.chances-more summary:hover {
+  color: var(--ink);
+}
+
+.chances-note {
+  margin-top: 0.55rem;
+  color: var(--ink-3);
+  font-size: var(--step--2);
+  line-height: 1.5;
+}
+
+/* ---------------------------------------------- segment detail extras -- */
+
+.panel h3.detail-title {
+  margin-bottom: 0.15rem;
+}
+
+.detail-kicker {
+  margin-bottom: 0.75rem;
+  color: var(--ink-3);
+  font-size: var(--step--2);
+}
+
+.stat-row .v-note {
+  color: var(--ink-3);
+}
+
+.still-air {
+  border-top: 1px solid var(--line-soft);
+}
+
+.still-air-line {
+  padding: 0 0 0.42rem;
+  color: var(--wind);
+  font-size: var(--step--2);
+  text-align: right;
+}
+
+.still-air-line a,
+.still-air-board a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.still-air-line a:hover,
+.still-air-board a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.still-air-rough {
+  color: var(--warn);
+  cursor: help;
+}
+
+.still-air-board {
+  padding: 0 0 0.5rem;
+}
+
+.still-air-board summary {
+  cursor: pointer;
+  color: var(--ink-2);
+  font-size: var(--step--2);
+}
+
+.still-air-board ol {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+}
+
+.still-air-board li {
+  display: grid;
+  grid-template-columns: 1.4em minmax(0, 1fr) auto auto;
+  gap: 0.6rem;
+  align-items: baseline;
+  padding: 0.22rem 0;
+  font-size: var(--step--2);
+}
+
+.still-air-board .rank,
+.still-air-board .recorded {
+  color: var(--ink-3);
+}
+
+/* ------------------------------------------------------- rail cards -- */
+
+/* A source or soft-record tag must not fold the window's time in two. */
+.card-meta {
+  flex-wrap: wrap;
+  row-gap: 0.2rem;
+}
+
+.card-meta .mono {
+  white-space: nowrap;
+}

@@ -5,11 +5,11 @@ It does two things for one rider, from their own Strava data:
 
 - **Wind**: predicts, hour by hour for the next week, how long each of the
   rider's Strava segments will take in the forecast wind, and when the rider has
-  the best chance of beating their record.
+  the best chance of beating their record. Saved routes are planned against
+  the same forecast.
 - **Training**: the rider's complete training history, from 2012 onwards, with
   physiological models fitted to the rider. These include training load,
-  fitness, VO2max, power and still-air segment times, plus route planning
-  against the forecast.
+  fitness, VO2max, power and still-air segment times.
 
 Predictions come from physics and from models fitted to the rider's own history.
 Claude (on Amazon Bedrock) writes the explanations and answers questions about
@@ -34,30 +34,58 @@ deployed by GitHub Actions with short-lived OIDC credentials.
 
 ### Wind (`/`)
 
-- **Segment timing:** for every starred segment, and for segments discovered
-  near the rider's position, predicted time and chance of beating the record
-  for each hour of the 7-day forecast.
-- **Best window:** the best hour for each segment, ranked, with a scrubber across
-  the week and an animated wind field over the map.
+Two modes, switched at the top of the page. The mode and the selected segment
+or route live in the URL (`/?mode=routes&route=…&start=…`), so a link shares
+what is on screen and the back button walks back through it.
+
+**Segments** (the default):
+
+- **The segments the rider rides:** each region's candidates come from three
+  sources, listed once and marked with each source they came from:
+  - segments starred on Strava;
+  - segments with effort history (the tracked set in `efforts.json`);
+  - segments discovered around the rider's position.
+
+  The list is ranked by score, weighted toward recent riding: each effort counts
+  half as much every 180 days, and a segment never ridden ranks at 80% of its
+  score. Regions are ordered and named the same way, after the town the rider
+  rides most, so with no position the page opens where the rider rides now.
+- **Best chances this week:** the daylight hours, not wet and with no wind or
+  gust warning, when a segment's predicted time comes within 2% (or 3 s) of the
+  record, with the chance of beating it. Near misses and soft records (set well
+  below the power the rider holds now, or with a stop) are listed apart. They
+  are read from the same evaluations as the ranking, so the two always agree.
+- **Best window:** the best rideable hour for each segment, with a scrubber
+  across the week and an animated wind field over the map.
 - **Segment detail:**
   - the gradient profile;
   - a strip showing tailwind and headwind along the segment;
   - the power the prediction assumes, and its source;
   - the uncertainty;
-  - a "why this score" breakdown.
+  - a "why this score" breakdown;
+  - the best time in still air beside the PR, where the PR ranks among the
+    still-air times, a still-air leaderboard, and a link to every effort.
 - **Safety gates:** hours with dangerous gusts, sustained wind, rain or
   temperature score zero, whatever the time gain.
 - **Briefing:** a short written briefing on the best opportunities, grounded in
   the computed evidence.
 
+**Routes:**
+
+- **Route of the day:** every saved route ranked for today's remaining
+  daylight, tomorrow or the weekend, each at its best start.
+- **Ride planner:** picking a route opens it. The planner shows predicted time
+  for every start hour of the week at a chosen power, and the map coloured by
+  the wind the rider will meet.
+
 ### Training (`/training`)
 
 | Page | What it shows |
 |---|---|
-| Overview | Year-over-year cumulative progress, goals and pace, a GitHub-style activity calendar, and route of the day |
+| Overview | Year-over-year cumulative progress, goals and pace, a GitHub-style activity calendar, and a route-of-the-day card linking to the wind page's Routes mode |
 | Activities | Searchable log. Each activity has a map, gradient-coloured elevation profile, 2D and 3D route views, power and heart-rate analysis, and climbs categorised the way Strava does. It also shows this activity's place in its repeated loop and the segment efforts with still-air times |
-| Routes / Segments | Most-ridden loops; PR chances for the coming week; still-air leaderboards |
-| Saved routes | Every saved Strava route with its profile and climbs, plus a **ride planner**: predicted time for every start hour of the week at a chosen power, and the map coloured by the wind the rider will meet |
+| Routes | Most-ridden loops |
+| Saved routes | Every saved Strava route with its profile and climbs, sortable by the wind, with a link to plan it on the wind page |
 | Heatmap | Every outdoor route overlaid on one map |
 | Performance | FTP and its history, the power curve and five-point profile, fitness/fatigue/form, Garmin-scale acute and chronic load with load focus, and cycling VO2max with its trend |
 | Garage | Bikes and mileage, plus a maintenance log |
@@ -201,7 +229,7 @@ of activities, held out by date.
 
 ### Route forecasting
 
-**Ride planner:** the saved-route planner splits a route into up to 300
+**Ride planner** (the wind page's Routes mode): the saved-route planner splits a route into up to 300
 sections. Each section meets the forecast for the moment the rider is expected
 to reach it, interpolated between hours and taken from the nearest 0.1° forecast
 cell.
@@ -213,9 +241,35 @@ and temperature.
   routes cost 4 forecast requests.
 - Sections are cached by the routes' ETag.
 
-**PR chances** run the same evaluation for every segment with history and list
-the hours when the predicted time comes within reach of the record. Each comes
-with a probability, and a confidence note from the model's backtest error.
+**PR chances** read the wind view's own matrix of evaluations (every segment,
+every forecast hour) and list the rideable hours when the predicted time comes
+within reach of the record. The record is the one `evaluate()` measures
+against, so a chance's probability is the evaluation's own. Soft records are
+judged on the server from the record's implied power against what the rider
+holds there now.
+
+### Segment sources
+
+`GET /api/opportunities` merges three sources (`lib/segment-candidates.ts`):
+
+- **Starred:** the starred list is read live from Strava; geometry is reused
+  from the saved bundle, so a refresh costs one read rather than one per
+  segment.
+- **Tracked:** every segment in `efforts.json` with at least one effort,
+  carrying the rider's record, the still-air best and leaderboard, and the
+  model's typical miss there.
+- **Discovered:** Strava's segment explorer, searched around the rider's
+  position (the region they ride most when there is none). Each failure is
+  logged with its class, Strava's status and Strava's message, and a 401 or
+  403 stands discovery down for six hours. When it fails, the saved bundle's
+  discoveries near the same place stand in, and the page says so in a quiet
+  source note rather than a warning.
+
+`strava_worker` also counts every segment effort in every ingested activity,
+tracked or not, into `segment-usage.json` (name, start point, distance, grade,
+count, last ridden), at no extra Strava read. The wind view uses it for
+recency, and the daily refresh backfills the most ridden untracked segment
+(three rides or more) into the tracked set, so the set grows with real riding.
 
 ## Generative AI
 
@@ -225,9 +279,19 @@ only explains and retrieves.
 - **Briefing** (`lib/server/briefing.ts`):
   - Claude through Amazon Bedrock, falling back to the Anthropic API, then to a
     deterministic template.
-  - The prompt carries only the computed evidence for the top five
-    opportunities, and is told never to state a number outside it.
-  - Responses are cached by a hash of that evidence.
+  - The prompt carries only computed evidence, and is told never to state a
+    number outside it:
+    - the top five windows (soft records left out), each with its still-air
+      best, the PR's rank in still air and any "rough here" caveat;
+    - up to three near misses from the week's best chances;
+    - the best saved route for the day, with its predicted and calm-air
+      times, tailwind share and whether it finishes before sunset.
+  - The browser builds that evidence from what it computed
+    (`lib/briefing-evidence.ts`) and keeps the body small: names clipped,
+    counts capped, numbers rounded. Amplify rejects a POST body over about
+    6 KB; a real body is about 3 KB and the worst case under 4 KB.
+  - Responses are cached by a hash of that evidence, so a changed route window
+    regenerates the briefing.
 - **Ask** (`lib/training/ask/`): a streaming tool-use agent on Claude Opus 5.5
   (Bedrock first, then the Anthropic API).
   - **Tools:** seven typed, schema-validated tools over the training data —
@@ -306,7 +370,7 @@ sequenceDiagram
   W->>Q2: event (owner's activities only, group strava-events)
   Q1->>L1: one message at a time (reserved concurrency 1)
   L1->>S: re-fetch activity with segment efforts
-  L1->>B: efforts.json (weather attached once ERA5 covers it)
+  L1->>B: efforts.json (weather attached once ERA5 covers it), segment-usage.json
   Q2->>L2: in order within the FIFO group
   L2->>S: re-fetch activity, streams, gear
   L2->>B: activities.json, streams/{id}.json, streams-index.json

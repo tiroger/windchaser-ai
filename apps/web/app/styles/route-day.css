@@ -2,46 +2,50 @@
   Route of the day (components/training/RouteOfTheDay.tsx) and the "best for"
   sort on the saved routes list (SavedRoutesPanel.tsx).
 
-  Same rules as training.css: everything under .training, every colour a
+  Same rules as training.css, every colour a
   WindChaser token or a color-mix() of one. Faster than calm leans to
   --open and slower to --warn, as in the ride planner; the sketch uses the
   planner's --data-open / --data-effort pair for tailwind and headwind.
+
+  Shared by Training and the wind page's Routes mode, so every selector is
+  scoped to either .training or .wind-routes (components/RoutesView.tsx) and
+  neither leaks into the rest of the wind view.
 */
 
-.training .t-rd {
+:is(.training, .wind-routes) .t-rd {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
 }
 
-.training .t-rd .t-card-head {
+:is(.training, .wind-routes) .t-rd .t-card-head {
   margin-bottom: 0;
 }
 
-.training .t-rd .is-faster,
-.training .t-saved .is-faster {
+:is(.training, .wind-routes) .t-rd .is-faster,
+:is(.training, .wind-routes) .t-saved .is-faster {
   color: var(--open);
 }
 
-.training .t-rd .is-slower,
-.training .t-saved .is-slower {
+:is(.training, .wind-routes) .t-rd .is-slower,
+:is(.training, .wind-routes) .t-saved .is-slower {
   color: var(--warn);
 }
 
-.training .t-rd-note {
+:is(.training, .wind-routes) .t-rd-note {
   margin: 0;
   color: var(--ink-2);
   font-size: var(--step--1);
 }
 
-.training .t-rd-note.is-light {
+:is(.training, .wind-routes) .t-rd-note.is-light {
   padding: 0.5rem 0.75rem;
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   color: var(--ink);
 }
 
-.training .t-rd-loading {
+:is(.training, .wind-routes) .t-rd-loading {
   display: grid;
   place-items: center;
   min-height: 180px;
@@ -51,7 +55,7 @@
   font-size: var(--step--1);
 }
 
-.training .t-rd-body {
+:is(.training, .wind-routes) .t-rd-body {
   display: grid;
   grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr);
   gap: 1rem;
@@ -60,7 +64,7 @@
 
 /* ------------------------------------------------------------ top pick -- */
 
-.training .t-rd-top {
+:is(.training, .wind-routes) .t-rd-top {
   display: grid;
   grid-template-columns: 180px minmax(0, 1fr);
   gap: 1rem;
@@ -72,15 +76,15 @@
   transition: box-shadow 120ms ease;
 }
 
-.training .t-rd-top:hover {
+:is(.training, .wind-routes) .t-rd-top:hover {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
-.training .t-rd-top:hover .t-rd-name {
+:is(.training, .wind-routes) .t-rd-top:hover .t-rd-name {
   color: var(--accent);
 }
 
-.training .t-rd-sketch-frame {
+:is(.training, .wind-routes) .t-rd-sketch-frame {
   display: grid;
   place-items: center;
   min-height: 160px;
@@ -88,7 +92,7 @@
   background: var(--surface);
 }
 
-.training .t-rd-sketch {
+:is(.training, .wind-routes) .t-rd-sketch {
   display: block;
   width: 100%;
   height: 100%;
@@ -96,7 +100,7 @@
   padding: 0.5rem;
 }
 
-.training .t-rd-sketch.is-mini {
+:is(.training, .wind-routes) .t-rd-sketch.is-mini {
   flex-shrink: 0;
   width: 44px;
   height: 44px;
@@ -105,25 +109,25 @@
   background: var(--surface-2);
 }
 
-.training .t-rd-nosketch {
+:is(.training, .wind-routes) .t-rd-nosketch {
   color: var(--ink-3);
   font-size: var(--step--2);
 }
 
-.training .t-rd-main {
+:is(.training, .wind-routes) .t-rd-main {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
   min-width: 0;
 }
 
-.training .t-rd-when {
+:is(.training, .wind-routes) .t-rd-when {
   color: var(--accent);
   font-size: var(--step--1);
   font-weight: 540;
 }
 
-.training .t-rd-name {
+:is(.training, .wind-routes) .t-rd-name {
   margin: 0;
   font-size: var(--step-2);
   font-weight: 560;
@@ -132,39 +136,39 @@
   overflow-wrap: anywhere;
 }
 
-.training .t-rd-meta {
+:is(.training, .wind-routes) .t-rd-meta {
   margin: 0;
   color: var(--ink-3);
   font-size: var(--step--1);
 }
 
-.training .t-rd-headline {
+:is(.training, .wind-routes) .t-rd-headline {
   margin: 0.15rem 0 0;
   font-size: var(--step-0);
   font-weight: 520;
 }
 
-.training .t-rd-facts {
+:is(.training, .wind-routes) .t-rd-facts {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.55rem 1rem;
   margin: 0.45rem 0 0;
 }
 
-.training .t-rd-facts dt {
+:is(.training, .wind-routes) .t-rd-facts dt {
   color: var(--ink-3);
   font-size: var(--step--2);
   font-weight: 500;
 }
 
-.training .t-rd-facts dd {
+:is(.training, .wind-routes) .t-rd-facts dd {
   margin: 0.05rem 0 0;
   color: var(--ink);
   font-size: var(--step--1);
 }
 
 
-.training .t-rd-flag {
+:is(.training, .wind-routes) .t-rd-flag {
   margin: 0.2rem 0 0;
   color: var(--warn);
   font-size: var(--step--2);
@@ -172,14 +176,14 @@
 
 /* ---------------------------------------------------------------- next -- */
 
-.training .t-rd-next {
+:is(.training, .wind-routes) .t-rd-next {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
   min-width: 0;
 }
 
-.training .t-rd-list {
+:is(.training, .wind-routes) .t-rd-list {
   display: flex;
   flex-direction: column;
   margin: 0;
@@ -187,7 +191,7 @@
   list-style: none;
 }
 
-.training .t-rd-row {
+:is(.training, .wind-routes) .t-rd-row {
   display: flex;
   align-items: center;
   gap: 0.65rem;
@@ -198,29 +202,29 @@
   text-decoration: none;
 }
 
-.training .t-rd-row:hover {
+:is(.training, .wind-routes) .t-rd-row:hover {
   background: var(--surface-2);
 }
 
-.training .t-rd-row:hover .t-row-text strong {
+:is(.training, .wind-routes) .t-rd-row:hover .t-row-text strong {
   color: var(--accent);
 }
 
-.training .t-rd-rank {
+:is(.training, .wind-routes) .t-rd-rank {
   width: 1rem;
   color: var(--ink-3);
   font-size: var(--step--1);
   text-align: center;
 }
 
-.training .t-rd-next > .t-link {
+:is(.training, .wind-routes) .t-rd-next > .t-link {
   padding-top: 0.5rem;
   align-self: flex-start;
 }
 
 /* --------------------------------------------------------------- badge -- */
 
-.training .t-rd-badge {
+:is(.training, .wind-routes) .t-rd-badge {
   flex-shrink: 0;
   padding: 0.14rem 0.5rem;
   border-radius: var(--radius-pill);
@@ -231,17 +235,17 @@
   white-space: nowrap;
 }
 
-.training .t-rd-badge.is-faster {
+:is(.training, .wind-routes) .t-rd-badge.is-faster {
   background: color-mix(in srgb, var(--open) 14%, transparent);
 }
 
-.training .t-rd-badge.is-slower {
+:is(.training, .wind-routes) .t-rd-badge.is-slower {
   background: color-mix(in srgb, var(--warn) 14%, transparent);
 }
 
 /* -------------------------------------------------------------- legend -- */
 
-.training .t-rd-legend {
+:is(.training, .wind-routes) .t-rd-legend {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -251,69 +255,69 @@
   font-size: var(--step--2);
 }
 
-.training .t-rd-legend span {
+:is(.training, .wind-routes) .t-rd-legend span {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
 }
 
-.training .t-rd-legend i {
+:is(.training, .wind-routes) .t-rd-legend i {
   width: 14px;
   height: 3px;
   border-radius: 2px;
 }
 
-.training .t-rd-legend-note {
+:is(.training, .wind-routes) .t-rd-legend-note {
   flex-basis: 100%;
 }
 
 /* ---------------------------------------------------- saved routes sort -- */
 
-.training .t-saved-sort {
+:is(.training, .wind-routes) .t-saved-sort {
   display: flex;
   margin-top: 0.5rem;
 }
 
-.training .t-saved-sort select {
+:is(.training, .wind-routes) .t-saved-sort select {
   width: 100%;
 }
 
-.training .t-saved-status {
+:is(.training, .wind-routes) .t-saved-status {
   margin: 0.45rem 0 0;
   color: var(--ink-3);
   font-size: var(--step--2);
 }
 
-.training .t-saved-status.is-light {
+:is(.training, .wind-routes) .t-saved-status.is-light {
   color: var(--ink-2);
 }
 
 /* -------------------------------------------------------------- narrow -- */
 
 @media (max-width: 980px) {
-  .training .t-rd-body {
+  :is(.training, .wind-routes) .t-rd-body {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 
 @media (max-width: 640px) {
-  .training .t-rd-top {
+  :is(.training, .wind-routes) .t-rd-top {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .training .t-rd-sketch-frame {
+  :is(.training, .wind-routes) .t-rd-sketch-frame {
     min-height: 140px;
   }
 
-  .training .t-rd-sketch {
+  :is(.training, .wind-routes) .t-rd-sketch {
     max-height: 170px;
   }
 
-  .training .t-rd-name {
+  :is(.training, .wind-routes) .t-rd-name {
     font-size: var(--step-1);
   }
 
-  .training .t-rd-facts {
+  :is(.training, .wind-routes) .t-rd-facts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

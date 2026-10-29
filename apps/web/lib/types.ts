@@ -1,9 +1,70 @@
 export type LatLon = [number, number];
 
+/**
+ * Where a candidate segment came from. A segment can come from several at
+ * once (starred and ridden, say); `source` is the strongest of them and
+ * `sources` lists them all.
+ */
+export type SegmentSource = "starred" | "tracked" | "discovered";
+
+/** How much, and how lately, the rider rides a segment. */
+export interface SegmentRiding {
+  /** Efforts on record: the effort history's, or the usage count. */
+  attempts: number;
+  /** UTC ISO time of the latest effort, when known. */
+  last_ridden: string | null;
+  /**
+   * Efforts weighted by age, each counting half as much every
+   * RECENCY_HALF_LIFE_DAYS: where the rider rides now, rather than ever.
+   */
+  recent: number;
+}
+
+/** One still-air entry on a segment's leaderboard. */
+export interface StillAirEntry {
+  date: string;
+  activity_id: string | null;
+  still_air_s: number;
+  elapsed_s: number;
+}
+
+/**
+ * The rider's record on a segment they have history on, as the wind view
+ * shows it. Names, times, dates and activity IDs only.
+ */
+export interface SegmentRecord {
+  /** Strava's PR: the fastest elapsed time. */
+  pr_elapsed_s: number;
+  pr_date: string;
+  pr_activity_id: string | null;
+  /** The record was ridden easily or with a stop; see isSoftRecord. */
+  soft: boolean;
+  /** Typical miss of the model on this segment, seconds. */
+  model_error_s: number;
+  /** "attempts" when measured on this segment's own hard efforts; else the backtest's figure. */
+  model_error_source: "attempts" | "backtest";
+  still_air: {
+    best_s: number;
+    best_date: string;
+    best_activity_id: string | null;
+    /** Efforts with a still-air time. */
+    count: number;
+    /** Where the PR effort ranks among them, 1 being fastest. */
+    pr_rank: number | null;
+    /** Whether still air tracks the power meter here; "worse" reads as rough. */
+    check: "better" | "worse" | "unchecked";
+    /** Fastest few in still air. */
+    top: StillAirEntry[];
+  } | null;
+}
+
 export interface Segment {
   id: number;
   name: string;
-  source: "starred" | "discovered";
+  source: SegmentSource;
+  sources?: SegmentSource[];
+  riding?: SegmentRiding | null;
+  record?: SegmentRecord | null;
   distance_m: number;
   average_grade: number;
   maximum_grade: number;
@@ -100,6 +161,11 @@ export interface Region {
   lon: number;
   starred_count: number;
   discovered_count?: number;
+  tracked_count?: number;
+  /** Every candidate segment in the region, whatever its source. */
+  segment_count?: number;
+  /** Recency-weighted riding across the region; regions are ordered by it. */
+  recent?: number;
 }
 
 export interface Bundle {
@@ -120,6 +186,8 @@ export interface Bundle {
   regions: Region[];
   segments: Segment[];
   forecast_cells: Record<string, ForecastCell>;
+  /** Where the discovered segments came from, as a quiet note for the page. */
+  discovery?: { source: "live" | "saved" | "none"; note: string | null };
 }
 
 /** Rider parameters feeding the constant-power model. */

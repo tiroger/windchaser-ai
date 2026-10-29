@@ -22,6 +22,8 @@ locals {
     for f in fileset("${var.source_root}/packages/cycling-analytics/cycling_analytics", "**/*.py") :
     "cycling_analytics/${f}" => "${var.source_root}/packages/cycling-analytics/cycling_analytics/${f}"
   }
+
+  data_object = "${var.app_data_bucket_arn}/%s"
 }
 
 data "archive_file" "worker" {
@@ -77,6 +79,10 @@ data "aws_iam_policy_document" "worker" {
     resources = [aws_sqs_queue.events.arn]
   }
 
+  # Named keys only. The bucket also holds the web application's own data and
+  # the Training data training_sync owns, and object-level grants keep each
+  # writer to its keys in fact and not only by convention. These, with the
+  # bundle below, are every key handler.py touches.
   statement {
     sid    = "ReadAndWriteAppData"
     effect = "Allow"
@@ -84,7 +90,32 @@ data "aws_iam_policy_document" "worker" {
       "s3:GetObject",
       "s3:PutObject",
     ]
-    resources = ["${var.app_data_bucket_arn}/*"]
+    resources = [
+      format(local.data_object, var.efforts_s3_key),
+      format(local.data_object, var.calibration_s3_key),
+      format(local.data_object, var.segment_usage_s3_key),
+    ]
+  }
+
+  # The bundle belongs to the web application; the worker only reads it.
+  statement {
+    sid       = "ReadBundle"
+    effect    = "Allow"
+    actions   = ["s3:GetObject"]
+    resources = [format(local.data_object, var.bundle_s3_key)]
+  }
+
+  # Without ListBucket, S3 answers a missing object with AccessDenied rather
+  # than NoSuchKey, and the first ingestion after segment usage was introduced
+  # -- before segment-usage.json exists -- would read as a failure instead of
+  # an empty start. Unconditioned because a GetObject's 404 check carries no
+  # s3:prefix for a condition to match; listing reveals key names only, and
+  # the web runtime and training_sync already hold the same grant.
+  statement {
+    sid       = "DistinguishMissingObjects"
+    effect    = "Allow"
+    actions   = ["s3:ListBucket"]
+    resources = [var.app_data_bucket_arn]
   }
 
   # Write as well as read. Strava may hand back a new refresh token, and when it
@@ -140,11 +171,12 @@ resource "aws_lambda_function" "worker" {
 
   environment {
     variables = {
-      STRAVA_SECRET_ARN  = var.strava_secret_arn
-      APP_DATA_BUCKET    = var.app_data_bucket
-      EFFORTS_S3_KEY     = var.efforts_s3_key
-      CALIBRATION_S3_KEY = var.calibration_s3_key
-      BUNDLE_S3_KEY      = var.bundle_s3_key
+      STRAVA_SECRET_ARN    = var.strava_secret_arn
+      APP_DATA_BUCKET      = var.app_data_bucket
+      EFFORTS_S3_KEY       = var.efforts_s3_key
+      CALIBRATION_S3_KEY   = var.calibration_s3_key
+      BUNDLE_S3_KEY        = var.bundle_s3_key
+      SEGMENT_USAGE_S3_KEY = var.segment_usage_s3_key
     }
   }
 

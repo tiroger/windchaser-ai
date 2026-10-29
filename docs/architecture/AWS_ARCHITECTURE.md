@@ -52,7 +52,7 @@ flowchart TB
 | Component | Role |
 |---|---|
 | Amplify Hosting (`WEB_COMPUTE`) | Renders the pages and serves the API routes. Reads S3 JSON through an ETag-validated in-memory cache. |
-| `strava_worker` (Lambda, 2 GB, reserved concurrency 1) | Segment efforts: ingests webhook events, re-reads tracked segments, attaches ERA5 weather once the archive covers an effort, rebuilds `calibration.json` daily. |
+| `strava_worker` (Lambda, 2 GB, reserved concurrency 1) | Segment efforts: ingests webhook events, counts every segment effort into `segment-usage.json`, re-reads tracked segments, backfills the most ridden untracked one, attaches ERA5 weather once the archive covers an effort, rebuilds `calibration.json` daily. Object-level grants on its four keys only. |
 | `training_sync` (Lambda, arm64, 256 MB) | Activities, detail streams, gear and saved routes; computes exercise load and the VO2max signal from full-resolution streams. |
 | SQS standard and FIFO | Absorb webhook bursts and retries. The FIFO group `strava-events` serialises training writes; reserved concurrency serialises `strava_worker`'s. |
 | EventBridge | Daily calibration refresh; daily reconciliation and hourly streams backfill for training. |
@@ -68,13 +68,28 @@ flowchart TB
 1. The browser asks for its position, then `GET /api/opportunities`.
 2. The route resolves the segments and fetches the 7-day forecast once per 0.1°
    cell (Open-Meteo, cached 30 minutes).
-   - **Segments:** starred segments plus ones discovered near the rider.
+   - **Segments:** starred segments, the tracked segments with effort history
+     in `efforts.json` (with the rider's record and still-air times), and
+     segments discovered around the rider's position, merged so each appears
+     once with every source it came from. `segment-usage.json` adds how often
+     and how lately each is ridden; ranking and region order lean on it.
+   - **Discovery failures** are logged with the error's class, Strava's status
+     and message; a 401 or 403 stands discovery down for six hours, and the
+     saved bundle's discoveries near the same place stand in, noted quietly on
+     the page.
    - **Calibration:** applied from `calibration.json`.
    - **Fallback:** if Strava or the forecast is unavailable, the response uses
      the saved bundle in S3, and says so.
 3. The browser evaluates every segment against every forecast hour with the
-   physics model and ranks the windows.
-4. `POST /api/briefing` sends the top five as evidence.
+   physics model, ranks the windows and picks the week's PR chances from the
+   same evaluations.
+   - **Routes mode** (`/?mode=routes`) instead calls
+     `/api/training/route-ranking` and, for the route picked,
+     `/api/training/saved-routes/{id}` and `/api/training/route-forecast`.
+4. `POST /api/briefing` sends the evidence: the top five windows with their
+   still-air facts, the week's near misses and the best saved route for the
+   day, all computed in the browser and kept well under Amplify's 6 KB body
+   limit.
    - Claude writes the briefing, cached by a hash of that evidence.
    - If the model fails or the per-instance call budget is spent, a
      deterministic template answers instead.

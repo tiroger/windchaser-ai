@@ -506,6 +506,327 @@ def test_resync_progress_is_saved_even_when_nothing_is_new() -> None:
     assert saved and saved[-1]["segments"]["1001"].get("efforts_synced_at"), "otherwise it re-reads the same segments forever"
 
 
+def summary_effort(effort_id: int, segment_id: int, when: str, **segment) -> dict:
+    """An effort as the detailed activity carries it, with its segment summary."""
+    out = effort(effort_id, segment_id, when)
+    out["segment"].update(segment)
+    return out
+
+
+def test_usage_counts_every_effort_including_untracked_segments() -> None:
+    store = history()
+    usage = handler.segment_usage.empty()
+    original = with_activity(
+        {
+            "segment_efforts": [
+                summary_effort(1, 1001, "2026-10-16T15:00:00Z", name="Tracked climb",
+                               distance=3000.0, average_grade=5.0,
+                               start_latlng=[41.0, -73.9]),
+                summary_effort(2, 229781, "2026-10-16T15:30:00Z", name="Hawk Hill",
+                               distance=2900.1, average_grade=5.4,
+                               start_latlng=[37.83, -122.49]),
+                # The same climb twice in one ride is two efforts, so two counts.
+                summary_effort(3, 229781, "2026-10-16T16:00:00Z", name="Hawk Hill",
+                               distance=2900.1, average_grade=5.4,
+                               start_latlng=[37.83, -122.49]),
+                # Strava sends an empty list when it has no start.
+                summary_effort(4, 4197, "2026-10-16T16:10:00Z", name="No start",
+                               distance=800.0, average_grade=1.0, start_latlng=[]),
+            ]
+        }
+    )
+    try:
+        added = handler.apply_event(
+            {"object_type": "activity", "object_id": 55, "aspect_type": "create"},
+            store,
+            usage,
+        )
+    finally:
+        handler.activity = original
+
+    # The history is unchanged in kind: tracked segments only.
+    assert added == 1 and [e["segment_id"] for e in store["efforts"]] == [1001]
+    hawk = usage["segments"]["229781"]
+    assert hawk == {
+        "id": 229781, "name": "Hawk Hill", "start": [37.83, -122.49],
+        "distance_m": 2900.1, "average_grade": 5.4, "count": 2,
+        "last_ridden": "2026-10-16T16:00:00Z",
+    }, hawk
+    assert usage["segments"]["1001"]["count"] == 1, "tracked segments are counted too"
+    assert usage["segments"]["4197"]["start"] is None
+    assert usage["activities"] == {"55": [1001, 229781, 229781, 4197]}, usage["activities"]
+
+
+def test_usage_is_not_counted_twice_for_one_activity() -> None:
+    store = history()
+    usage = handler.segment_usage.empty()
+    payload = {"segment_efforts": [summary_effort(2, 229781, "2026-10-16T15:30:00Z", name="Hawk Hill")]}
+    original = with_activity(payload)
+    try:
+        for aspect in ("create", "create", "update"):
+            handler.apply_event(
+                {"object_type": "activity", "object_id": 55, "aspect_type": aspect},
+                store,
+                usage,
+            )
+    finally:
+        handler.activity = original
+    # Redelivery and later edits to the same ride must not read as more rides.
+    assert usage["segments"]["229781"]["count"] == 1, usage
+    assert usage["activities"] == {"55": [229781]}
+
+
+def test_usage_delete_uncounts_that_activity_only() -> None:
+    store = history()
+    usage = handler.segment_usage.empty()
+    usage["segments"] = {
+        "229781": {"id": 229781, "name": "Hawk Hill", "start": None, "distance_m": 2900.1,
+                   "average_grade": 5.4, "count": 3, "last_ridden": "2026-10-16T16:00:00Z"},
+        "4197": {"id": 4197, "name": "Once", "start": None, "distance_m": 800.0,
+                 "average_grade": 1.0, "count": 1, "last_ridden": "2026-10-16T16:10:00Z"},
+    }
+    usage["activities"] = {"55": [229781, 229781, 4197], "56": [229781]}
+    handler.apply_event(
+        {"object_type": "activity", "object_id": 55, "aspect_type": "delete"}, store, usage
+    )
+    assert usage["segments"]["229781"]["count"] == 1, usage
+    assert "4197" not in usage["segments"], "a segment counted down to nothing goes"
+    assert usage["activities"] == {"56": [229781]}, usage["activities"]
+    # Not recomputed: the other rides' dates are not held.
+    assert usage["segments"]["229781"]["last_ridden"] == "2026-10-16T16:00:00Z"
+
+
+def test_ingest_saves_usage_beside_the_efforts() -> None:
+    import json
+
+    store = history()
+    saved: dict[str, dict] = {}
+    load, save = handler.store.load, handler.store.save
+    handler.store.load = lambda key: store if key == handler.EFFORTS_KEY else {
+        "generated_at": None, "segments": {}, "efforts": []}  # store.load's missing shape
+    handler.store.save = lambda key, payload: saved.__setitem__(key, payload)
+    original = with_activity({"segment_efforts": [
+        summary_effort(2, 229781, "2026-10-16T15:30:00Z", name="Hawk Hill")]})
+    try:
+        body = {"object_type": "activity", "object_id": 55, "aspect_type": "create"}
+        result = handler.ingest({"Records": [{"body": json.dumps(body)}]})
+    finally:
+        handler.activity = original
+        handler.store.load, handler.store.save = load, save
+
+    # An untracked segment changes usage only, so only usage is written.
+    assert result["efforts_changed"] == 0 and result["usage_changed"], result
+    assert list(saved) == [handler.USAGE_KEY], list(saved)
+    usage = saved[handler.USAGE_KEY]
+    assert usage["generated_at"] and "efforts" not in usage, usage
+    assert usage["segments"]["229781"]["count"] == 1
+
+
+def test_a_usage_failure_never_costs_the_efforts() -> None:
+    import json
+
+    for failing in ("load", "save"):
+        store = history()
+        saved: dict[str, dict] = {}
+        load, save = handler.store.load, handler.store.save
+
+        def fake_load(key):
+            if key == handler.USAGE_KEY and failing == "load":
+                raise RuntimeError("AccessDenied")
+            return store if key == handler.EFFORTS_KEY else handler.segment_usage.empty()
+
+        def fake_save(key, payload):
+            if key == handler.USAGE_KEY and failing == "save":
+                raise RuntimeError("AccessDenied")
+            saved[key] = payload
+
+        handler.store.load, handler.store.save = fake_load, fake_save
+        original = with_activity({"segment_efforts": [effort(1, 1001, "2026-10-01T12:00:00Z")]})
+        try:
+            body = {"object_type": "activity", "object_id": 55, "aspect_type": "create"}
+            result = handler.ingest({"Records": [{"body": json.dumps(body)}]})
+        finally:
+            handler.activity = original
+            handler.store.load, handler.store.save = load, save
+
+        assert result["efforts_changed"] == 1 and not result["usage_changed"], (failing, result)
+        assert saved[handler.EFFORTS_KEY]["efforts"][0]["activity_id"] == 55, failing
+        assert handler.USAGE_KEY not in saved, failing
+
+
+def usage_with(**counts) -> dict:
+    usage = handler.segment_usage.empty()
+    for sid, (count, last) in counts.items():
+        sid = sid.lstrip("s")
+        usage["segments"][sid] = {"id": int(sid), "name": f"Segment {sid}", "start": None,
+                                  "distance_m": 1000.0, "average_grade": 4.0,
+                                  "count": count, "last_ridden": last}
+    return usage
+
+
+def test_backfill_prefers_a_frequently_ridden_usage_segment() -> None:
+    store = history()
+    bundle = {"segments": [{"id": 2003, "name": "Bundle climb", "effort_count_personal": 4,
+                            "points": [[41.1, -73.9], [41.11, -73.9]]}]}
+    usage = usage_with(
+        # Tracked already, however often it is ridden.
+        s1001=(50, "2026-10-20T12:00:00Z"),
+        # Ridden more than the bundle's segment, and never shown in a bundle.
+        s5001=(12, "2026-10-16T16:00:00Z"),
+        s5002=(12, "2026-10-18T16:00:00Z"),
+        # Below MIN_USAGE_COUNT: a route taken once or twice.
+        s5003=(handler.MIN_USAGE_COUNT - 1, "2026-10-27T16:00:00Z"),
+    )
+    pick = handler.backfill_candidate(store, bundle, usage)
+    # Equal counts go to the more recently ridden.
+    assert pick and pick["id"] == 5002, pick
+    assert "points" not in pick, "usage candidates carry no geometry"
+
+    del usage["segments"]["5001"], usage["segments"]["5002"]
+    pick = handler.backfill_candidate(store, bundle, usage)
+    assert pick and pick["id"] == 2003, f"the bundle segment beats a rare one: {pick}"
+
+    bundle["segments"] = []
+    assert handler.backfill_candidate(store, bundle, usage) is None, "rare and tracked only"
+
+
+def test_backfill_reuses_bundle_geometry_for_a_usage_segment() -> None:
+    store = history()
+    # An older bundle with no personal count, but a line worth keeping.
+    bundle = {"segments": [{"id": 5004, "name": "Shown", "effort_count_personal": 0,
+                            "points": [[41.1, -73.9], [41.11, -73.9]]}]}
+    pick = handler.backfill_candidate(store, bundle, usage_with(s5004=(5, None)))
+    assert pick is bundle["segments"][0], pick
+
+
+def test_backfill_fetches_geometry_for_a_usage_segment() -> None:
+    store = history()
+    candidate = {"id": 5001, "name": "Hawk Hill", "distance_m": 2900.0, "average_grade": 5.0}
+    detail = {
+        "id": 5001, "name": "Hawk Hill (corrected)", "distance": 2900.1, "average_grade": 5.4,
+        # Google's reference polyline: (38.5,-120.2), (40.7,-120.95), (43.252,-126.453).
+        "map": {"polyline": "", "summary_polyline": "_p~iF~ps|U_ulLnnqC_mqNvxq`@"},
+        "athlete_segment_stats": {"pr_elapsed_time": 640},
+    }
+    asked: list[int] = []
+    segment, all_efforts, profile = strava.segment, strava.all_efforts, strava.altitude_profile
+    strava.segment = lambda sid: (asked.append(sid), detail)[1]
+    strava.all_efforts = lambda sid, **kw: [
+        {"id": 94, "start_date": "2026-10-16T16:00:00Z", "elapsed_time": 650,
+         "activity": {"id": 55}}]
+    strava.altitude_profile = lambda sid: {"distance_m": [0, 2900], "altitude_m": [10, 160]}
+    try:
+        added = handler.backfill_segment(store, candidate)
+    finally:
+        strava.segment, strava.all_efforts, strava.altitude_profile = segment, all_efforts, profile
+
+    assert added == 1 and asked == [5001], (added, asked)
+    held = store["segments"]["5001"]
+    assert held["points"] == [[38.5, -120.2], [40.7, -120.95], [43.252, -126.453]], held["points"]
+    assert held["name"] == "Hawk Hill (corrected)" and held["distance_m"] == 2900.1
+    assert held["average_grade"] == 5.4 and held["pr_elapsed_time"] == 640
+    assert held["cell_id"] == handler.cell_id(40.7, -120.95), held["cell_id"]
+    assert store["efforts"][0]["segment_id"] == 5001 and store["efforts"][0]["cell_id"] == held["cell_id"]
+
+
+def test_backfill_records_nothing_without_segment_detail() -> None:
+    candidate = {"id": 5001, "name": "Hawk Hill"}
+    segment, all_efforts = strava.segment, strava.all_efforts
+    strava.all_efforts = lambda sid, **kw: (_ for _ in ()).throw(AssertionError("history fetched"))
+    try:
+        for answer in ("refused", {"map": {}}):
+            store = history()
+
+            def fake(sid, answer=answer):
+                if answer == "refused":
+                    raise strava.Unavailable("Strava 404")
+                return answer
+
+            strava.segment = fake
+            # A segment that cannot be drawn costs one read, not the history too.
+            assert handler.backfill_segment(store, candidate) == 0
+            assert "5001" not in store["segments"] and not store["efforts"]
+    finally:
+        strava.segment, strava.all_efforts = segment, all_efforts
+
+
+def test_refresh_backfills_from_usage_and_tolerates_losing_it() -> None:
+    for usage in (usage_with(s5001=(7, "2026-10-16T16:00:00Z")), None):
+        store = history()
+        store["segments"]["1001"]["efforts_synced_at"] = "2026-10-27T00:00:00Z"
+        asked: list[int] = []
+
+        def fake_load(key, usage=usage):
+            if key == handler.EFFORTS_KEY:
+                return store
+            if key == handler.USAGE_KEY:
+                if usage is None:
+                    raise RuntimeError("AccessDenied")
+                return usage
+            return {"segments": []}
+
+        saved = (handler.store.load, handler.store.save, handler.store.save_calibration,
+                 strava.segment, strava.all_efforts, strava.altitude_profile,
+                 handler.attach_weather, handler.build_calibration)
+        handler.store.load = fake_load
+        handler.store.save = lambda key, payload: None
+        handler.store.save_calibration = lambda key, payload: None
+        strava.segment = lambda sid: (asked.append(sid), {
+            "name": "Hawk Hill", "map": {"polyline": "_p~iF~ps|U_ulLnnqC_mqNvxq`@"}})[1]
+        strava.all_efforts = lambda sid, **kw: [
+            {"id": 95, "start_date": "2026-10-16T16:00:00Z", "elapsed_time": 650}]
+        strava.altitude_profile = lambda sid: None
+        handler.attach_weather = lambda payload: 0
+        handler.build_calibration = lambda payload: {"segments": {}, "rider": {}}
+        try:
+            result = handler.refresh()
+        finally:
+            (handler.store.load, handler.store.save, handler.store.save_calibration,
+             strava.segment, strava.all_efforts, strava.altitude_profile,
+             handler.attach_weather, handler.build_calibration) = saved
+
+        if usage is None:
+            # Usage unreadable: the run carries on with the bundle alone.
+            assert asked == [] and result["segments_backfilled"] == 0, (asked, result)
+        else:
+            assert asked == [5001] and result["segments_backfilled"] == 1, (asked, result)
+            assert "5001" in store["segments"]
+
+
+def test_simplify_thins_like_the_application() -> None:
+    points = [[float(i), 0.0] for i in range(1000)]
+    thinned = strava.simplify(points)
+    assert len(thinned) == 240 and thinned[0] == [0.0, 0.0] and thinned[-1] == [999.0, 0.0]
+    # floor(i * 1000 / 240), as lib/server/strava.ts takes it.
+    assert thinned[1] == [4.0, 0.0] and thinned[2] == [8.0, 0.0], thinned[:3]
+    assert strava.simplify(points[:5]) == points[:5]
+
+
+def test_a_segment_strava_will_not_describe_is_passed_over() -> None:
+    store = history()
+    usage = {"segments": {
+        "3001": {"id": 3001, "name": "Gone private", "count": 9, "last_ridden": "2026-10-01T10:00:00Z"},
+        "3002": {"id": 3002, "name": "Next best", "count": 4, "last_ridden": "2026-10-01T10:00:00Z"},
+    }, "activities": {}}
+    original = strava.segment
+
+    def refuse(sid):
+        raise strava.Unavailable("Strava 404")
+
+    strava.segment = refuse
+    try:
+        first = handler.backfill_candidate(store, {"segments": []}, usage)
+        assert first and first["id"] == 3001, first
+        assert handler.backfill_segment(store, first) == 0
+    finally:
+        strava.segment = original
+    # Otherwise the same refused segment is the top candidate every run, and
+    # spends a read each time while blocking every other backfill.
+    assert "3001" in store["undescribed_segments"]
+    second = handler.backfill_candidate(store, {"segments": []}, usage)
+    assert second and second["id"] == 3002, second
+
+
 def main() -> None:
     print("Strava worker")
     for name, fn in sorted(globals().items()):

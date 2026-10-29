@@ -208,6 +208,7 @@ const objectKeys = {
   stream: (id: string) => `${process.env.STREAMS_S3_PREFIX ?? "streams/"}${id}.json`,
   savedRoutes: () => process.env.SAVED_ROUTES_S3_KEY ?? "saved-routes.json",
   efforts: () => process.env.EFFORTS_S3_KEY ?? "efforts.json",
+  segmentUsage: () => process.env.SEGMENT_USAGE_S3_KEY ?? "segment-usage.json",
   savedRoute: (id: string) =>
     `${process.env.SAVED_ROUTES_S3_PREFIX ?? "saved-routes/"}${id}.json`,
 };
@@ -359,6 +360,18 @@ export async function loadEffortHistoryObject(): Promise<Stored<unknown>> {
   const bucket = dataBucket();
   if (bucket) return readJson(bucket, objectKeys.efforts(), (raw) => raw, null);
   const local = await readLocalFile("efforts.json");
+  return { etag: "local", value: local ? (JSON.parse(local) as unknown) : null };
+}
+
+/**
+ * How often the rider rides every segment, tracked or not (segment-usage.json,
+ * counted by strava_worker from each ingested activity). Null before the
+ * first ride after it was introduced.
+ */
+export async function loadSegmentUsageObject(): Promise<Stored<unknown>> {
+  const bucket = dataBucket();
+  if (bucket) return readJson(bucket, objectKeys.segmentUsage(), (raw) => raw, null);
+  const local = await readLocalFile("segment-usage.json");
   return { etag: "local", value: local ? (JSON.parse(local) as unknown) : null };
 }
 

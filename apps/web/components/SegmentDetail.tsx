@@ -1,8 +1,12 @@
 "use client";
 
+import Link from "next/link";
+
 import { compassLabel, formatDelta, formatDuration } from "@/lib/geo";
 import { breakdown } from "@/lib/physics";
-import type { Evaluation, Segment } from "@/lib/types";
+import type { Evaluation, Segment, SegmentRecord } from "@/lib/types";
+
+import { sourceLabel } from "./OpportunityRail";
 
 export default function SegmentDetail({
   segment,
@@ -20,7 +24,8 @@ export default function SegmentDetail({
   return (
     <div className="detail">
       <div className="panel">
-        <h3>{segment.name}</h3>
+        <h3 className="detail-title">{segment.name}</h3>
+        <p className="detail-kicker">{sourceLabel(segment, true)}</p>
         {gated && (
           <div className="notice" role="status">
             <strong>Window rejected.</strong>
@@ -43,6 +48,9 @@ export default function SegmentDetail({
           <span className="k">{prIsMoving ? "Best moving time" : "Your PR"}</span>
           <span className="v">{pr ? formatDuration(pr) : "none recorded"}</span>
         </div>
+        {segment.record?.still_air && (
+          <StillAirRows record={segment.record} stillAir={segment.record.still_air} />
+        )}
         {delta !== null && (
           <div className="stat-row">
             <span className="k">Difference</span>
@@ -191,6 +199,90 @@ export default function SegmentDetail({
           never averaged as wind.
         </p>
       </div>
+    </div>
+  );
+}
+
+const ORDINAL = new Intl.PluralRules("en-US", { type: "ordinal" });
+const SUFFIX: Record<string, string> = { one: "st", two: "nd", few: "rd", other: "th" };
+const ordinal = (n: number) => `${n}${SUFFIX[ORDINAL.select(n)] ?? "th"}`;
+
+const shortDate = (date: string) =>
+  new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+
+/**
+ * The rider's best on this segment with the wind taken out, beside the PR as
+ * recorded: what the legs did, not what the wind gave. Times are stated like
+ * Strava's (elapsed), so they compare with the PR directly. Where still air
+ * tracks the power meter worse than raw time here, it is marked rough.
+ */
+function StillAirRows({
+  record,
+  stillAir,
+}: {
+  record: SegmentRecord;
+  stillAir: NonNullable<SegmentRecord["still_air"]>;
+}) {
+  const rough = stillAir.check === "worse";
+  const history = stillAir.best_activity_id
+    ? `/training/activities/${stillAir.best_activity_id}#segments`
+    : null;
+  return (
+    <div className="still-air">
+      <div className="stat-row">
+        <span className="k">Best in still air</span>
+        <span className="v">
+          ≈ {formatDuration(stillAir.best_s)}
+          <span className="v-note"> vs PR {formatDuration(record.pr_elapsed_s)}</span>
+        </span>
+      </div>
+      <p className="still-air-line">
+        {stillAir.pr_rank !== null
+          ? `Your PR is ${ordinal(stillAir.pr_rank)} of ${stillAir.count} in still air`
+          : `${stillAir.count} ${stillAir.count === 1 ? "effort has" : "efforts have"} a still-air time`}
+        {rough && (
+          <span className="still-air-rough" title="Still-air times line up with your power meter less well than raw times here, likely shelter the hourly wind data cannot see.">
+            {" "}
+            · rough here
+          </span>
+        )}
+        {history && (
+          <>
+            {" · "}
+            <Link href={history}>history</Link>
+          </>
+        )}
+      </p>
+      <details className="still-air-board">
+        <summary>Still-air leaderboard</summary>
+        <ol>
+          {stillAir.top.map((entry, i) => (
+            <li key={`${entry.date}-${i}`}>
+              <span className="rank mono">{i + 1}</span>
+              <span className="date">
+                {entry.activity_id ? (
+                  <Link href={`/training/activities/${entry.activity_id}#segments`}>{shortDate(entry.date)}</Link>
+                ) : (
+                  shortDate(entry.date)
+                )}
+              </span>
+              <span className="mono">≈ {formatDuration(entry.still_air_s)}</span>
+              <span className="mono recorded">{formatDuration(entry.elapsed_s)}</span>
+            </li>
+          ))}
+        </ol>
+        {rough && (
+          <p className="footnote">
+            Rough here: on this segment still-air times line up with your power meter less well than raw
+            times do, likely shelter the hourly wind data cannot see.
+          </p>
+        )}
+      </details>
     </div>
   );
 }

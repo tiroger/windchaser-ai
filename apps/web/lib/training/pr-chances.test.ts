@@ -1,11 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
-  chooseSegments,
   closestHours,
   isSoftRecord,
   selectChances,
-  ttlCache,
   withinReach,
   type HourCandidate,
 } from "./pr-chances";
@@ -114,51 +112,5 @@ describe("isSoftRecord", () => {
     expect(isSoftRecord({ ...base, impliedWatts: 180 })).toBe(true);
     expect(isSoftRecord({ ...base, movingSeconds: 540 })).toBe(true);
     expect(isSoftRecord({ ...base, impliedWatts: null })).toBe(false);
-  });
-});
-
-describe("chooseSegments", () => {
-  const cellOf = ([lat, lon]: [number, number]) =>
-    `${(Math.round(lat * 10) / 10).toFixed(2)},${(Math.round(lon * 10) / 10).toFixed(2)}`;
-  const segment = (id: number, mid: [number, number], lastRidden: string) => ({ id, mid, lastRidden });
-
-  it("keeps segments near the latest ride, sharing cells, within the caps", () => {
-    const { chosen, cells, skipped } = chooseSegments(
-      [
-        segment(1, [37.83, -122.49], "2026-10-16"), // home
-        segment(2, [37.84, -122.48], "2025-01-01"), // same cell
-        segment(3, [37.76, -122.44], "2024-01-01"), // nearby, own cell
-        segment(4, [41.0, -73.9], "2026-01-01"), // New York: too far
-        segment(5, [37.3, -122.1], "2023-01-01"), // 65 km: in range, over the cell cap
-      ],
-      cellOf,
-      { maxCells: 2 },
-    );
-    expect(chosen.map((s) => s.id)).toEqual([1, 2, 3]);
-    expect(cells).toEqual(["37.80,-122.50", "37.80,-122.40"]);
-    expect(skipped).toBe(1);
-  });
-});
-
-describe("ttlCache", () => {
-  it("computes once per key within the TTL, coalescing concurrent callers", async () => {
-    let now = 0;
-    const cache = ttlCache<number>(1000, () => now);
-    const load = vi.fn(async () => 42);
-    await Promise.all([cache.get("a", load), cache.get("a", load)]);
-    await cache.get("a", load);
-    expect(load).toHaveBeenCalledTimes(1);
-    now = 1500;
-    await cache.get("a", load);
-    expect(load).toHaveBeenCalledTimes(2);
-    // A new key (the effort history changed) recomputes at once.
-    await cache.get("b", load);
-    expect(load).toHaveBeenCalledTimes(3);
-  });
-
-  it("does not cache a failure", async () => {
-    const cache = ttlCache<number>(1000, () => 0);
-    await expect(cache.get("a", () => Promise.reject(new Error("down")))).rejects.toThrow("down");
-    expect(await cache.get("a", async () => 7)).toBe(7);
   });
 });
