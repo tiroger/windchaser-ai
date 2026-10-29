@@ -1535,6 +1535,157 @@
   color: var(--alert);
 }
 
+/* ------------------------------------------------------ heatmap poster -- */
+
+.training .t-heat-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem 0.75rem;
+}
+
+.training .t-heat-labels {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 32px;
+  color: var(--ink-2);
+  font-size: var(--step--1);
+  cursor: pointer;
+}
+
+.training .t-heat-labels input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.training .t-button.is-quiet {
+  background: transparent;
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.training .t-button.is-quiet:hover:not(:disabled) {
+  filter: none;
+  background: var(--surface-2);
+}
+
+.training .t-poster-dialog {
+  width: min(920px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+}
+
+.training .t-poster-dialog::backdrop {
+  background: rgb(6 8 10 / 0.6);
+  backdrop-filter: blur(2px);
+}
+
+.training .t-poster-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  gap: 1.4rem;
+  padding: 1.25rem;
+}
+
+.training .t-poster-frame {
+  position: relative;
+  width: 100%;
+  max-height: calc(100dvh - 82px);
+  margin: 0 auto;
+  overflow: hidden;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px var(--line-soft), 0 12px 32px rgb(0 0 0 / 0.22);
+}
+
+.training .t-poster-frame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.training .t-poster-wait {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  font-size: var(--step--1);
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  opacity: 0.6;
+  animation: t-poster-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes t-poster-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .training .t-poster-wait {
+    animation: none;
+  }
+}
+
+.training .t-poster-side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.training .t-poster-title .t-input {
+  width: 100%;
+}
+
+.training .t-poster-facts {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.8rem 0 0.2rem;
+}
+
+.training .t-poster-facts dt {
+  color: var(--ink-3);
+  font-size: var(--step--2);
+  font-weight: 500;
+}
+
+.training .t-poster-facts dd {
+  margin: 0.1rem 0 0;
+  font-family: var(--font-mono), monospace;
+  font-size: var(--step--1);
+  overflow-wrap: anywhere;
+}
+
+.training .t-poster-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding-top: 0.9rem;
+}
+
+@media (max-width: 640px) {
+  .training .t-poster-body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1rem;
+    padding: 1rem;
+  }
+
+  .training .t-poster-frame {
+    width: min(100%, 300px);
+  }
+}
+
 /* ----------------------------------------------------------- responsive -- */
 
 @media (max-width: 1100px) {
