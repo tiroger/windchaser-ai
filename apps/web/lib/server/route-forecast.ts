@@ -22,7 +22,9 @@ import {
   sunTimes,
   windPhrase,
   type CellSeries,
+  type RawProfile,
   type RouteForecast,
+  type RouteSection,
 } from "@/lib/training/route-forecast";
 import type { ForecastCell } from "@/lib/types";
 
@@ -80,13 +82,31 @@ export function localToEpoch(local: string, timeZone: string, fallbackOffsetS: n
   }
 }
 
-const round = (value: number, digits: number) => {
+export const round = (value: number, digits: number) => {
   const scale = 10 ** digits;
   return Math.round(value * scale) / scale;
 };
 
+/**
+ * A route's sections exactly as the planner publishes them. Rounded once,
+ * here: the browser recomputes from these same numbers when the power or the
+ * hour changes, and the route ranking must get the same answer as both.
+ */
+export function plannerSections(raw: RawProfile): RouteSection[] {
+  const visible = hideRouteEnds(raw.latlng).map(Boolean);
+  return buildSections(raw, visible).map((s) => ({
+    ...s,
+    start_m: Math.round(s.start_m),
+    length_m: round(s.length_m, 1),
+    bearing_deg: Math.round(s.bearing_deg),
+    grade: round(s.grade, 4),
+  }));
+}
+
+export type CellWeather = CellSeries & { temp: number[]; precip: number[]; gust: number[] };
+
 /** A cell's forecast on the reference cell's hours, reduced to what the planner needs. */
-function series(cell: ForecastCell, hours: string[]): CellSeries & { temp: number[]; precip: number[]; gust: number[] } {
+export function series(cell: ForecastCell, hours: string[]): CellWeather {
   const index = new Map(cell.time.map((t, i) => [t, i]));
   const at = (values: (number | null)[], i: number | undefined, fallback: number) =>
     i === undefined ? fallback : (values[i] ?? fallback);
@@ -128,16 +148,7 @@ export async function routeForecast(
     throw new PlannerError("Route profile not synced yet", 404);
   }
 
-  const visible = hideRouteEnds(raw.latlng).map(Boolean);
-  // Rounded once, here, as published: the browser recomputes from these same
-  // numbers when the power or the hour changes, and must get the same answer.
-  const sections = buildSections(raw, visible).map((s) => ({
-    ...s,
-    start_m: Math.round(s.start_m),
-    length_m: round(s.length_m, 1),
-    bearing_deg: Math.round(s.bearing_deg),
-    grade: round(s.grade, 4),
-  }));
+  const sections = plannerSections(raw);
   if (!sections.length) throw new PlannerError("Route profile is too short to plan", 422);
 
   const sampled = sampleCells(sections);
