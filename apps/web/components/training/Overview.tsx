@@ -27,6 +27,7 @@ import ActiveDays from "./ActiveDays";
 import ActivityTable from "./ActivityTable";
 import GoalsCard from "./GoalsCard";
 import ProgressionChart from "./ProgressionChart";
+import RouteOfTheDay from "./RouteOfTheDay";
 import SportIcon, { sportTone } from "./SportIcon";
 import { useTraining } from "./TrainingProvider";
 
@@ -123,6 +124,9 @@ export default function Overview({
           tone={change === null ? undefined : change >= 0 ? "is-up" : "is-down"}
         />
       </section>
+
+      {/* Saved routes are rides: the pick shows for rides and for everything. */}
+      {(filter === "All" || filter === "Ride") && <RouteOfTheDay />}
 
       <section className="t-grid t-grid-wide">
         <article className="panel">

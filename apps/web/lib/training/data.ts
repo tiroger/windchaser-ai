@@ -382,19 +382,24 @@ export type RawRouteProfile = {
 };
 
 export async function loadSavedRoutes(): Promise<SavedRoute[]> {
+  return (await loadSavedRoutesStored()).value;
+}
+
+/**
+ * The saved routes with the version they were read at. The sync rewrites the
+ * list whenever a route or its profile changes, so the ETag doubles as a
+ * version for anything derived from every route's profile.
+ */
+export async function loadSavedRoutesStored(): Promise<Stored<SavedRoute[]>> {
   const bucket = dataBucket();
   if (bucket) {
-    return (
-      await readJson(
-        bucket,
-        objectKeys.savedRoutes(),
-        arrayOf("Saved route", normalizeSavedRoute),
-        [],
-      )
-    ).value;
+    return readJson(bucket, objectKeys.savedRoutes(), arrayOf("Saved route", normalizeSavedRoute), []);
   }
   const local = await readLocalFile("saved-routes.json");
-  return local ? arrayOf("Saved route", normalizeSavedRoute)(JSON.parse(local)) : [];
+  return {
+    etag: "local",
+    value: local ? arrayOf("Saved route", normalizeSavedRoute)(JSON.parse(local)) : [],
+  };
 }
 
 export async function loadSavedRouteProfile(id: string): Promise<RawRouteProfile | null> {

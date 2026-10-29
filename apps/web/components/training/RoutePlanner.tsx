@@ -45,7 +45,16 @@ type Load = { status: "loading" } | { status: "error"; message: string } | { sta
  * The server sends the forecast and the route's sections once. Moving the
  * power or picking an hour reruns the same model here, so both are instant.
  */
-export default function RoutePlanner({ routeId, profile }: { routeId: string; profile: RouteProfile }) {
+export default function RoutePlanner({
+  routeId,
+  profile,
+  start = null,
+}: {
+  routeId: string;
+  profile: RouteProfile;
+  /** Local wall-clock start ("YYYY-MM-DDTHH:mm") to open at, as the route ranking links. */
+  start?: string | null;
+}) {
   const [load, setLoad] = useState<Load>({ status: "loading" });
 
   useEffect(() => {
@@ -79,15 +88,22 @@ export default function RoutePlanner({ routeId, profile }: { routeId: string; pr
             : `The planner could not run for this route: ${load.message}.`}
         </p>
       )}
-      {load.status === "ready" && <Planner data={load.data} profile={profile} />}
+      {load.status === "ready" && <Planner data={load.data} profile={profile} start={start} />}
     </article>
   );
 }
 
-function Planner({ data, profile }: { data: RouteForecast; profile: RouteProfile }) {
+function Planner({ data, profile, start }: { data: RouteForecast; profile: RouteProfile; start: string | null }) {
   const palette = useChartPalette();
   const [wattsChoice, setWattsChoice] = useState<number | null>(null);
-  const [hourChoice, setHourChoice] = useState<number | null>(null);
+  // A start from the link selects that hour, and a new link selects again.
+  const linkedHour = start ? data.hours.indexOf(start.slice(0, 16)) : -1;
+  const [hourChoice, setHourChoice] = useState<number | null>(linkedHour >= 0 ? linkedHour : null);
+  const [linked, setLinked] = useState(start);
+  if (linked !== start) {
+    setLinked(start);
+    if (linkedHour >= 0) setHourChoice(linkedHour);
+  }
   const [hovered, setHovered] = useState<number | null>(null);
   const [mapMode, setMapMode] = useState<"wind" | "gradient">("wind");
   // The clock lives in state and ticks, so a page left open moves on with it.

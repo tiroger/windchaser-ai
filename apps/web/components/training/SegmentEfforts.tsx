@@ -5,14 +5,22 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import "@/app/training/loops.css";
+import "@/app/training/segments.css";
 import { compassLabel, formatDelta, formatDuration } from "@/lib/geo";
 import { formatNumber } from "@/lib/training/activity-types";
 import type { EffortWeather, SegmentEffortRow } from "@/lib/training/segments";
 
 import Chart, { axisText, splitLine, tooltip, useChartPalette } from "./Chart";
 import { DATE_AXIS_LABELS, durationAxis, ordinal, rideDate } from "./loop-format";
-
-const MPH_PER_MS = 2.23694;
+import ModeToggle from "./ModeToggle";
+import {
+  MPH_PER_MS,
+  netWind,
+  REASON_TEXT,
+  ROUGH_NOTE,
+  STILL_AIR_NOTE,
+  type TimeMode,
+} from "./segment-format";
 
 function weatherText(weather: EffortWeather | null): string | null {
   if (!weather) return null;
@@ -31,8 +39,8 @@ function weatherText(weather: EffortWeather | null): string | null {
   return parts.length ? parts.join(" · ") : null;
 }
 
-function RankBadge({ rank, of }: { rank: number; of: number }) {
-  if (rank === 1) return <span className="t-badge is-pr">PR</span>;
+function RankBadge({ rank, of, still }: { rank: number; of: number; still?: boolean }) {
+  if (rank === 1) return <span className="t-badge is-pr">{still ? "Best" : "PR"}</span>;
   if (rank <= 3) return <span className={`t-badge is-rank-${rank}`}>{ordinal(rank)}</span>;
   return (
     <span className="t-seg-rank num">
@@ -53,14 +61,22 @@ export default function SegmentEfforts({
   segments: SegmentEffortRow[];
 }) {
   const [open, setOpen] = useState<number | null>(null);
+  const [mode, setMode] = useState<TimeMode>("recorded");
+  const hasStillAir = segments.some((row) => row.stillAir && row.stillAir.count > 0);
+  const anyRough = segments.some((row) => row.stillAir?.check === "worse");
   return (
     <article className="panel t-segments" id="segments">
-      <span className="label">Segments</span>
-      <h2 className="t-card-title">
-        {segments.length
-          ? `${segments.length} tracked segment ${segments.length === 1 ? "effort" : "efforts"}`
-          : "No tracked segments"}
-      </h2>
+      <div className="t-card-head">
+        <div>
+          <span className="label">Segments</span>
+          <h2 className="t-card-title">
+            {segments.length
+              ? `${segments.length} tracked segment ${segments.length === 1 ? "effort" : "efforts"}`
+              : "No tracked segments"}
+          </h2>
+        </div>
+        {hasStillAir && <ModeToggle mode={mode} onChange={setMode} label="Rank segment efforts by" />}
+      </div>
       {segments.length === 0 ? (
         <p className="t-empty">
           This activity crossed none of the segments WindChaser tracks, or its efforts have not been
@@ -71,6 +87,11 @@ export default function SegmentEfforts({
           {segments.map((row, index) => {
             const isOpen = open === index;
             const weather = weatherText(row.weather);
+            const still = row.stillAir;
+            const inStill = mode === "still" && !!still;
+            const shownTime = inStill ? still.seconds : row.elapsedSeconds;
+            const wind = netWind(still?.tailwindMs ?? null);
+            const rough = still?.check === "worse";
             return (
               <li key={`${row.segmentId}-${index}`} className={isOpen ? "is-open" : undefined}>
                 <button
@@ -87,20 +108,39 @@ export default function SegmentEfforts({
                       {row.averageGrade !== null && ` · ${formatNumber(row.averageGrade, 1)}%`}
                       {weather && ` · ${weather}`}
                     </small>
+                    {still && (
+                      <small className="t-sa-line">
+                        {still.seconds === null ? (
+                          still.reason && REASON_TEXT[still.reason]
+                        ) : (
+                          <>
+                            {inStill
+                              ? `${formatDuration(row.elapsedSeconds)} recorded`
+                              : `≈ ${formatDuration(still.seconds)} still air`}
+                            {wind && ` · ${wind}`}
+                            {rough && (
+                              <span className="t-sa-rough" title={ROUGH_NOTE}>
+                                {" "}
+                                · rough here
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </small>
+                    )}
                   </span>
-                  <span className="t-seg-time num">{formatDuration(row.elapsedSeconds)}</span>
+                  <span className="t-seg-time num">
+                    {shownTime === null ? "—" : `${inStill ? "≈" : ""}${formatDuration(shownTime)}`}
+                  </span>
                   <span className="t-seg-badge">
-                    <RankBadge rank={row.rank} of={row.efforts} />
+                    {inStill ? (
+                      still.rank !== null && <RankBadge rank={still.rank} of={still.count} still />
+                    ) : (
+                      <RankBadge rank={row.rank} of={row.efforts} />
+                    )}
                   </span>
                   <span className="t-seg-delta num">
-                    {row.deltaSeconds === 0 ? (
-                      <small>{row.efforts > 1 ? `best of ${row.efforts}` : "first effort"}</small>
-                    ) : (
-                      <>
-                        {formatDelta(row.deltaSeconds)}
-                        <small>PR {rideDate(row.prDate)}</small>
-                      </>
-                    )}
+                    {inStill ? <StillDelta row={row} /> : <RecordedDelta row={row} />}
                   </span>
                   <span className="t-seg-chevron" aria-hidden="true">
                     {isOpen ? "−" : "+"}
@@ -108,7 +148,7 @@ export default function SegmentEfforts({
                 </button>
                 {isOpen && (
                   <div className="t-seg-history" id={`segment-history-${index}`}>
-                    <SegmentHistory row={row} activityId={activityId} />
+                    <SegmentHistory key={mode} row={row} activityId={activityId} initialMode={mode} />
                   </div>
                 )}
               </li>
@@ -120,35 +160,89 @@ export default function SegmentEfforts({
         <p className="t-note">
           Ranked against every effort WindChaser has recorded on each segment. Weather is the
           hourly reanalysis for when you rode it.
+          {hasStillAir && ` ${STILL_AIR_NOTE}`}
+          {anyRough && ` “Rough here”: ${ROUGH_NOTE}`}
         </p>
       )}
     </article>
   );
 }
 
-function SegmentHistory({ row, activityId }: { row: SegmentEffortRow; activityId: string }) {
+function RecordedDelta({ row }: { row: SegmentEffortRow }) {
+  if (row.deltaSeconds === 0) {
+    return <small>{row.efforts > 1 ? `best of ${row.efforts}` : "first effort"}</small>;
+  }
+  return (
+    <>
+      {formatDelta(row.deltaSeconds)}
+      <small>PR {rideDate(row.prDate)}</small>
+    </>
+  );
+}
+
+function StillDelta({ row }: { row: SegmentEffortRow }) {
+  const still = row.stillAir;
+  if (!still || still.seconds === null || still.bestSeconds === null) {
+    return <small>{still?.count ? `${still.count} adjusted` : "not adjusted"}</small>;
+  }
+  const delta = still.seconds - still.bestSeconds;
+  if (Math.round(delta) === 0) {
+    return <small>{still.count > 1 ? `best of ${still.count}` : "first effort"}</small>;
+  }
+  return (
+    <>
+      {formatDelta(delta)}
+      <small>best {still.bestDate ? rideDate(still.bestDate) : ""}</small>
+    </>
+  );
+}
+
+type HistoryPoint = SegmentEffortRow["history"][number];
+
+function SegmentHistory({
+  row,
+  activityId,
+  initialMode,
+}: {
+  row: SegmentEffortRow;
+  activityId: string;
+  initialMode: TimeMode;
+}) {
   const palette = useChartPalette();
+  const canStill = !!row.stillAir && row.stillAir.count > 0;
+  const [mode, setMode] = useState<TimeMode>(canStill ? initialMode : "recorded");
+  const still = mode === "still";
+  const best = still ? (row.stillAir?.bestSeconds ?? null) : row.prSeconds;
+
   const option = useMemo<EChartsOption>(() => {
     const text = axisText(palette);
-    const point = (entry: SegmentEffortRow["history"][number]) => ({
-      value: [entry.date, entry.elapsedSeconds] as [string, number],
+    const valueOf = (entry: HistoryPoint) => (still ? entry.stillAirSeconds : entry.elapsedSeconds);
+    const shown = row.history.filter((entry) => valueOf(entry) !== null);
+    const point = (entry: HistoryPoint) => ({
+      value: [entry.date, valueOf(entry)!] as [string, number],
       entry,
     });
-    const isThis = (entry: SegmentEffortRow["history"][number]) =>
+    const isThis = (entry: HistoryPoint) =>
       entry.activityId === activityId && entry.elapsedSeconds === row.elapsedSeconds;
+    const values = shown.map((entry) => valueOf(entry)!);
     return {
       grid: { top: 22, left: 46, right: 12, bottom: 24 },
       tooltip: {
         ...tooltip(palette),
         trigger: "item",
         formatter: (params: unknown) => {
-          const { data } = params as {
-            data: { entry: SegmentEffortRow["history"][number]; value: [string, number] };
-          };
-          const delta = data.value[1] - row.prSeconds;
-          return `<strong>${rideDate(data.entry.date, true)}</strong><br/>${formatDuration(
-            data.value[1],
-          )}${delta === 0 ? " · PR" : ` · ${formatDelta(delta)}`}`;
+          const { data } = params as { data: { entry: HistoryPoint; value: [string, number] } };
+          const entry = data.entry;
+          const lines = [`<strong>${rideDate(entry.date, true)}</strong>`];
+          lines.push(`${formatDuration(entry.elapsedSeconds)} recorded`);
+          if (entry.stillAirSeconds !== null) {
+            lines.push(`≈ ${formatDuration(entry.stillAirSeconds)} still air`);
+          }
+          if (best !== null) {
+            const delta = data.value[1] - best;
+            lines.push(Math.round(delta) === 0 ? (still ? "best still air" : "PR") : `${formatDelta(delta)} vs ${still ? "best" : "PR"}`);
+          }
+          return lines.join("<br/>");
         },
       },
       xAxis: {
@@ -160,37 +254,44 @@ function SegmentHistory({ row, activityId }: { row: SegmentEffortRow; activityId
         type: "value",
         scale: true,
         inverse: true,
-        ...durationAxis(row.history.map((entry) => entry.elapsedSeconds)),
+        ...durationAxis(values),
         axisLabel: { ...text, formatter: (value: number) => formatDuration(value) },
         splitLine: splitLine(palette),
       },
       series: [
         {
-          name: "Efforts",
+          name: still ? "Still air" : "Efforts",
           type: "line",
-          data: row.history.map(point),
+          data: shown.map(point),
           showSymbol: true,
           symbolSize: 7,
           lineStyle: { color: palette.line, width: 1.5 },
-          itemStyle: { color: palette.ink3, borderColor: palette.surface, borderWidth: 1.5 },
-          markLine: {
-            symbol: "none",
-            silent: true,
-            lineStyle: { color: palette.ink3, type: "dashed" },
-            label: {
-              position: "insideStartTop",
-              formatter: `PR ${formatDuration(row.prSeconds)}`,
-              color: palette.ink2,
-              fontSize: 10,
-              fontFamily: palette.fontMono,
-            },
-            data: [{ yAxis: row.prSeconds }],
+          itemStyle: {
+            color: still ? palette.wind : palette.ink3,
+            borderColor: palette.surface,
+            borderWidth: 1.5,
           },
+          markLine:
+            best === null
+              ? undefined
+              : {
+                  symbol: "none",
+                  silent: true,
+                  lineStyle: { color: palette.ink3, type: "dashed" },
+                  label: {
+                    position: "insideStartTop",
+                    formatter: `${still ? "Best still air" : "PR"} ${formatDuration(best)}`,
+                    color: palette.ink2,
+                    fontSize: 10,
+                    fontFamily: palette.fontMono,
+                  },
+                  data: [{ yAxis: best }],
+                },
         },
         {
           name: "This effort",
           type: "line",
-          data: row.history.filter(isThis).map(point),
+          data: shown.filter(isThis).map(point),
           showSymbol: true,
           symbolSize: 12,
           lineStyle: { opacity: 0 },
@@ -199,15 +300,21 @@ function SegmentHistory({ row, activityId }: { row: SegmentEffortRow; activityId
         },
       ],
     };
-  }, [activityId, palette, row]);
+  }, [activityId, best, palette, row, still]);
 
   const first = row.history[0];
+  const pending = row.history.length - (row.stillAir?.count ?? 0);
   return (
     <>
+      {canStill && (
+        <div className="t-sa-chart-head">
+          <ModeToggle mode={mode} onChange={setMode} label={`${row.name} history shows`} />
+        </div>
+      )}
       <Chart
         option={option}
         height={150}
-        label={`${row.name}: elapsed time of every effort, faster higher`}
+        label={`${row.name}: ${still ? "still-air" : "elapsed"} time of every effort, faster higher`}
       />
       <p className="t-note">
         {row.efforts} {row.efforts === 1 ? "effort" : "efforts"}
@@ -221,6 +328,35 @@ function SegmentHistory({ row, activityId }: { row: SegmentEffortRow; activityId
           rideDate(row.prDate, true)
         )}
         .
+        {row.stillAir?.bestSeconds != null && (
+          <>
+            {" "}
+            Best in still air ≈ {formatDuration(row.stillAir.bestSeconds)}
+            {row.stillAir.bestDate && (
+              <>
+                {" "}
+                on{" "}
+                {row.stillAir.bestActivityId && row.stillAir.bestActivityId !== activityId ? (
+                  <Link
+                    className="t-link"
+                    href={`/training/activities/${row.stillAir.bestActivityId}#segments`}
+                  >
+                    {rideDate(row.stillAir.bestDate, true)}
+                  </Link>
+                ) : (
+                  rideDate(row.stillAir.bestDate, true)
+                )}
+              </>
+            )}
+            .
+          </>
+        )}
+        {still && pending > 0 && ` ${pending} without a still-air time are left out.`}
+        {row.stillAir?.impliedWatts != null &&
+          ` This effort: ≈ ${row.stillAir.impliedWatts} W steady${
+            row.measuredWatts ? `, ${Math.round(row.measuredWatts)} W on your power meter` : ""
+          }.`}
+        {still && row.stillAir?.check === "worse" && ` ${ROUGH_NOTE}`}
       </p>
     </>
   );

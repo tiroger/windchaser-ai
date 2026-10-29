@@ -6,6 +6,8 @@ import {
   effortRank,
   linkEfforts,
   parseEffortHistory,
+  rSquared,
+  stillAirIndex,
   type EffortActivity,
   type EffortHistory,
 } from "./segments";
@@ -186,5 +188,59 @@ describe("activitySegments", () => {
     expect(effortRank(600, [640, 600, 610, 600])).toBe(1);
     expect(effortRank(610, [640, 600, 610, 600])).toBe(3);
     expect(effortRank(640, [640, 600, 610, 600])).toBe(4);
+  });
+});
+
+describe("still air on segment rows", () => {
+  // Due east along the flat, 2 km.
+  const line = Array.from({ length: 21 }, (_, i) => [37.8, -122.5 + (i * 0.1) / 87.9] as [number, number]);
+  const flat: EffortHistory = {
+    segments: { "9": { id: 9, name: "Flat", distance_m: 2000, average_grade: 0, points: line } },
+    efforts: [
+      // Same recorded time; one into a headwind, one with a tailwind, one not yet reanalysed.
+      { segment_id: 9, start_date: "2024-01-01T16:00:00Z", elapsed_time_s: 200, weather: { wind_speed_ms: 7, wind_from_deg: 90 } },
+      { segment_id: 9, start_date: "2024-02-01T16:00:00Z", elapsed_time_s: 195, weather: { wind_speed_ms: 7, wind_from_deg: 270 } },
+      { segment_id: 9, start_date: "2026-10-27T16:00:00Z", elapsed_time_s: 210, weather: null },
+    ],
+  };
+  const rider = { power_w: 250, mass_kg: 79.75, cda: 0.204, crr: 0.005, drivetrain_efficiency: 0.97 };
+  const links = new Map([
+    [0, "a"],
+    [1, "b"],
+    [2, "c"],
+  ]);
+  const dates = new Map([
+    ["a", "2024-01-01T08:00:00"],
+    ["b", "2024-02-01T08:00:00"],
+    ["c", "2026-10-27T09:00:00"],
+  ]);
+
+  it("ranks by still-air time separately, leaving recorded ranks and the PR alone", () => {
+    const index = stillAirIndex(flat, rider);
+    const [head] = activitySegments("a", flat, links, dates, index);
+    // Recorded: 2nd behind the tailwind effort, which keeps the PR.
+    expect(head).toMatchObject({ rank: 2, prSeconds: 195, prActivityId: "b" });
+    // In still air the headwind effort is the better ride.
+    expect(head.stillAir).toMatchObject({ rank: 1, count: 2, bestActivityId: "a", check: "unchecked" });
+    expect(head.stillAir!.seconds!).toBeLessThan(200);
+    expect(head.stillAir!.tailwindMs!).toBeLessThan(0);
+    expect(head.history.map((point) => point.stillAirSeconds === null)).toEqual([false, false, true]);
+  });
+
+  it("explains an effort with no weather yet", () => {
+    const [pending] = activitySegments("c", flat, links, dates, stillAirIndex(flat, rider));
+    expect(pending.stillAir).toMatchObject({ seconds: null, reason: "no-weather", rank: null });
+    expect(pending.rank).toBe(3);
+  });
+
+  it("leaves still air out when no index is given", () => {
+    expect(activitySegments("a", flat, links, dates)[0].stillAir).toBeNull();
+  });
+});
+
+describe("rSquared", () => {
+  it("is 1 for a straight line and null without spread", () => {
+    expect(rSquared([1, 2, 3], [2, 4, 6])).toBeCloseTo(1);
+    expect(rSquared([1, 1, 1], [2, 4, 6])).toBeNull();
   });
 });

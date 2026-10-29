@@ -3,11 +3,27 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
+import "@/app/training/route-day.css";
 import { formatCalendarDate, formatHours, formatNumber } from "@/lib/training/activity-types";
 import type { RouteProfile, SavedRoute } from "@/lib/training/metrics/route-profile";
+import { DAY_LABELS, RANKING_DAYS, type RankedRoute, type RankingDay } from "@/lib/training/route-ranking";
 
 import RouteAnalysis, { TrackStats, type RouteTrack } from "./RouteAnalysis";
 import RoutePlanner from "./RoutePlanner";
+import { savedBadge, useRouteRanking } from "./RouteSketch";
+
+type Sort = "name" | RankingDay;
+
+const SORT_LABELS: Record<Sort, string> = {
+  name: "Strava order",
+  today: "Best for today",
+  tomorrow: "Best for tomorrow",
+  weekend: "Best for the weekend",
+};
+
+function parseSort(value: string | null): Sort {
+  return RANKING_DAYS.find((day) => day === value) ?? "name";
+}
 
 const SUB_TYPES: Record<NonNullable<SavedRoute["sub_type"]>, string> = {
   road: "Road",
@@ -30,20 +46,40 @@ export default function SavedRoutesPanel({ routes }: { routes: SavedRoute[] }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const selectedId = searchParams.get("route");
-  const setSelectedId = (id: string) => {
+  // ?start= opens the planner at that hour, ?sort= orders the list by the wind.
+  const startParam = searchParams.get("start");
+  const sort = parseSort(searchParams.get("sort"));
+  const navigate = (changes: Record<string, string | null>) => {
     const params = new URLSearchParams(searchParams.toString());
-    params.set("route", id);
+    for (const [key, value] of Object.entries(changes)) {
+      if (value === null) params.delete(key);
+      else params.set(key, value);
+    }
     router.push(`${pathname}?${params.toString()}`, { scroll: false });
   };
   // Profiles by route ID; null marks one that is not available yet.
   const [profiles, setProfiles] = useState<Record<string, RouteProfile | null>>({});
 
-  const visible = useMemo(
-    () => routes.filter((route) => route.name.toLowerCase().includes(query.toLowerCase())),
-    [query, routes],
-  );
+  const ranking = useRouteRanking(sort === "name" ? null : sort);
+  const ranked = useMemo(() => {
+    if (ranking?.status !== "ready") return null;
+    return new Map(ranking.data.routes.map((route, index) => [route.id, { route, index }]));
+  }, [ranking]);
+
+  const visible = useMemo(() => {
+    const matching = routes.filter((route) => route.name.toLowerCase().includes(query.toLowerCase()));
+    if (!ranked) return matching;
+    // Ranked routes in ranking order, then the rest (runs, routes without a
+    // window) in their usual order.
+    const rank = (route: SavedRoute) => ranked.get(route.id)?.index ?? Number.MAX_SAFE_INTEGER;
+    return [...matching].sort((a, b) => rank(a) - rank(b));
+  }, [query, routes, ranked]);
   const selected = visible.find((route) => route.id === selectedId) ?? visible[0];
   const routeId = selected?.id;
+  // The planner opens at the hour asked for, or at the ranked window.
+  const selectedStart =
+    (selected && selected.id === selectedId ? startParam : null) ??
+    (selected ? (ranked?.get(selected.id)?.route.start ?? null) : null);
 
   useEffect(() => {
     if (!routeId || routeId in profiles) return;
@@ -84,6 +120,20 @@ export default function SavedRoutesPanel({ routes }: { routes: SavedRoute[] }) {
             onChange={(event) => setQuery(event.target.value)}
           />
         </label>
+        <label className="t-select t-saved-sort">
+          <select
+            aria-label="Sort routes"
+            value={sort}
+            onChange={(event) => navigate({ sort: event.target.value === "name" ? null : event.target.value })}
+          >
+            {(["name", ...RANKING_DAYS] as Sort[]).map((value) => (
+              <option key={value} value={value}>
+                {SORT_LABELS[value]}
+              </option>
+            ))}
+          </select>
+        </label>
+        {sort !== "name" && <RankingStatus load={ranking} day={sort} />}
         <div className="t-list t-scroll-list">
           {visible.map((route) => (
             <button
@@ -91,7 +141,9 @@ export default function SavedRoutesPanel({ routes }: { routes: SavedRoute[] }) {
               aria-pressed={route.id === selected?.id}
               key={route.id}
               type="button"
-              onClick={() => setSelectedId(route.id)}
+              onClick={() =>
+                navigate({ route: route.id, start: ranked?.get(route.id)?.route.start ?? null })
+              }
             >
               <span className="t-row-text">
                 <strong>
@@ -105,8 +157,10 @@ export default function SavedRoutesPanel({ routes }: { routes: SavedRoute[] }) {
                 <small>
                   {formatNumber(route.distance, 1)} mi · {formatNumber(route.elevation_gain)} ft
                   {route.sub_type ? ` · ${SUB_TYPES[route.sub_type]}` : ""}
+                  {ranked?.has(route.id) ? ` · ${ranked.get(route.id)!.route.start_label}` : ""}
                 </small>
               </span>
+              {ranked?.has(route.id) && <SavedBadge route={ranked.get(route.id)!.route} />}
             </button>
           ))}
           {!visible.length && <div className="t-empty">No routes match.</div>}
@@ -118,6 +172,7 @@ export default function SavedRoutesPanel({ routes }: { routes: SavedRoute[] }) {
           route={selected}
           profile={profiles[selected.id]}
           loading={!(selected.id in profiles)}
+          start={selectedStart}
         />
       )}
     </section>
@@ -128,10 +183,12 @@ function RouteDetail({
   route,
   profile,
   loading,
+  start,
 }: {
   route: SavedRoute;
   profile: RouteProfile | null | undefined;
   loading: boolean;
+  start: string | null;
 }) {
   const kicker = [
     route.type === "run" ? "Run route" : "Ride route",
@@ -153,7 +210,7 @@ function RouteDetail({
         {route.description && <p className="t-note">{route.description}</p>}
         <RouteStats route={route} track={profile ?? undefined} />
       </article>
-      {profile && route.type !== "run" && <RoutePlanner routeId={route.id} profile={profile} />}
+      {profile && route.type !== "run" && <RoutePlanner routeId={route.id} profile={profile} start={start} />}
       {profile ? (
         <RouteAnalysis track={profile} />
       ) : (
@@ -191,5 +248,41 @@ function RouteStats({ route, track }: { route: SavedRoute; track?: RouteTrack })
       ))}
       {track && <TrackStats track={track} />}
     </div>
+  );
+}
+
+/** Minutes saved against calm air at the route's best start that day. */
+function SavedBadge({ route }: { route: RankedRoute }) {
+  const badge = savedBadge(route.saved_s);
+  const notes = [
+    `${badge.text} against calm air at ${route.start_label}`,
+    route.rain_max_pct >= 30 ? `${route.rain_max_pct}% rain` : null,
+    route.before_sunset ? null : "finishes after sunset",
+    route.degraded ? "part of the forecast missing" : null,
+  ].filter(Boolean);
+  return (
+    <span className={`t-rd-badge num ${badge.tone}`} title={notes.join(", ")}>
+      {badge.text}
+      {(!route.before_sunset || route.rain_max_pct >= 30) && <span aria-hidden="true"> *</span>}
+    </span>
+  );
+}
+
+function RankingStatus({ load, day }: { load: ReturnType<typeof useRouteRanking>; day: RankingDay }) {
+  if (!load || load.status === "loading") return <p className="t-saved-status">Ranking by the forecast…</p>;
+  if (load.status === "error") return <p className="t-saved-status">The forecast is unavailable; routes keep their order.</p>;
+  const { routes, summary } = load.data;
+  if (!routes.length) {
+    return (
+      <p className="t-saved-status">
+        {day === "today" ? "No daylight left to start a ride today." : "No route could be ranked for this day."}
+      </p>
+    );
+  }
+  return (
+    <p className={`t-saved-status ${summary.light ? "is-light" : ""}`}>
+      {summary.message ??
+        `${routes.length} rides near home, ranked for ${DAY_LABELS[day].toLowerCase()} by the share of ride time the wind saves. Badges: minutes against calm air at each one\u2019s best start.`}
+    </p>
   );
 }
