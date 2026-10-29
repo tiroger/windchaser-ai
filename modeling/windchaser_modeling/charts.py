@@ -73,6 +73,7 @@ def theme() -> dict:
                 "domainColor": LINE,
                 "tickColor": LINE,
                 "labelPadding": 4,
+                "labelLimit": 260,
                 "titlePadding": 8,
             },
             "axisBand": {"grid": False},
@@ -86,6 +87,7 @@ def theme() -> dict:
                 "symbolStrokeWidth": 2,
                 "orient": "top",
                 "direction": "horizontal",
+                "labelLimit": 320,
             },
             "header": {"labelColor": INK, "labelFont": FONT, "labelFontSize": 12, "titleColor": INK_2},
             "range": {
@@ -159,7 +161,7 @@ def loess_scatter(
     return alt.layer(hrule(0.0), pts, smooth)
 
 
-def reliability_chart(df: pd.DataFrame, title: str, subtitle: str | None = None) -> alt.LayerChart:
+def reliability_chart(df: pd.DataFrame, title: str, subtitle: str | None = None, colors: dict | None = None) -> alt.LayerChart:
     """Nominal against empirical coverage, one line per method.
 
     Expects columns: method, nominal, coverage. On the diagonal is calibrated;
@@ -168,7 +170,7 @@ def reliability_chart(df: pd.DataFrame, title: str, subtitle: str | None = None)
     lines = alt.Chart(df).mark_line(point=alt.OverlayMarkDef(size=50, filled=True)).encode(
         x=alt.X("nominal:Q", title="Nominal coverage", scale=alt.Scale(domain=[0.4, 1.0]), axis=alt.Axis(format="%")),
         y=alt.Y("coverage:Q", title="Empirical coverage on held-out efforts", scale=alt.Scale(domain=[0.4, 1.0]), axis=alt.Axis(format="%")),
-        color=alt.Color("method:N", title=None),
+        color=alt.Color("method:N", title=None, scale=fixed_scale(colors, df["method"]) if colors else alt.Undefined),
         strokeDash=alt.StrokeDash("method:N", title=None),
         tooltip=[
             "method:N",
@@ -183,3 +185,10 @@ def reliability_chart(df: pd.DataFrame, title: str, subtitle: str | None = None)
 
 def titled(text: str, subtitle: str | None = None) -> alt.TitleParams:
     return alt.TitleParams(text, subtitle=subtitle) if subtitle else alt.TitleParams(text)
+
+
+def fixed_scale(mapping: dict[str, str], present=None) -> alt.Scale:
+    """A colour scale that gives each named series the same colour in every
+    chart, whatever subset a chart happens to draw."""
+    keys = [k for k in mapping if present is None or k in set(present)]
+    return alt.Scale(domain=keys, range=[mapping[k] for k in keys])

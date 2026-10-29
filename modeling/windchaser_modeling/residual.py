@@ -251,3 +251,141 @@ def sigma_scale(d: pd.DataFrame, levels=(0.8, 0.9)) -> dict:
             entry[f"z_{int(level * 100)}"] = round(E.normal_z(level), 3)
         out[branch] = entry
     return out
+
+
+# --------------------------------------------------------------------------
+# analysis helpers used by the notebook
+# --------------------------------------------------------------------------
+
+
+def leaderboard(point: pd.DataFrame, d: pd.DataFrame, n_boot: int = 2000) -> pd.DataFrame:
+    """Pooled metrics per model, with a ride-level bootstrap CI on the change
+    in MAE against no correction, and the number of years each model wins."""
+    groups = d.set_index("effort_id")["activity_id"]
+    none = point[point.model == "none"].set_index("effort_id")["abs_err_s"]
+    base_fold = point[point.model == "none"].groupby("fold")["abs_err_s"].mean()
+    rows = []
+    for spec in SPECS:
+        p = point[point.model == spec.name].set_index("effort_id")
+        if p.empty:
+            continue
+        m = E.point_metrics(p["actual_s"], p["pred_s"])
+        if spec.name == "none":
+            b = {"diff_s": 0.0, "lo_s": 0.0, "hi_s": 0.0, "p_a_better": float("nan")}
+        else:
+            b = E.paired_bootstrap(
+                p["abs_err_s"].to_numpy(), none.loc[p.index].to_numpy(), groups.loc[p.index].to_numpy(), n_boot=n_boot, seed=SEED
+            )
+        per_fold = p.groupby("fold")["abs_err_s"].mean()
+        rows.append(
+            {
+                "model": spec.name,
+                "label": spec.label,
+                **m,
+                "delta_mae_s": b["diff_s"],
+                "delta_lo_s": b["lo_s"],
+                "delta_hi_s": b["hi_s"],
+                "p_better": b["p_a_better"],
+                "folds_better": int((per_fold < base_fold.loc[per_fold.index] - 1e-9).sum()),
+                "folds": int(len(per_fold)),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def permutation_importances(d: pd.DataFrame, folds: list[E.Fold], repeats: int = 20) -> pd.DataFrame:
+    """Permutation importance of the boosted forecast-time model on each
+    fold's held-out year, averaged with test-size weights. Units: increase in
+    mean |log residual|, i.e. roughly a share of the effort's time."""
+    from sklearn.inspection import permutation_importance
+
+    rows = []
+    for f in folds:
+        tr, te = d.iloc[f.train_idx], d.iloc[f.test_idx]
+        cols = E.usable_columns(tr, FORECAST)
+        model = hgb(0.5).fit(tr[cols], tr["y"])
+        r = permutation_importance(
+            model, te[cols], te["y"], scoring="neg_mean_absolute_error", n_repeats=repeats, random_state=SEED
+        )
+        for c, mu in zip(cols, r.importances_mean):
+            rows.append({"feature": c, "fold": f.name, "importance": mu, "n": len(te)})
+    imp = pd.DataFrame(rows)
+    return (
+        imp.groupby("feature")
+        .apply(
+            lambda g: pd.Series(
+                {
+                    "importance": float(np.average(g["importance"], weights=g["n"])),
+                    "folds_positive": int((g["importance"] > 0).sum()),
+                    "folds": len(g),
+                }
+            ),
+            include_groups=False,
+        )
+        .reset_index()
+        .sort_values("importance", ascending=False)
+        .reset_index(drop=True)
+    )
+
+
+def partial_dependence_curves(d: pd.DataFrame, features: list[str], grid: int = 30) -> pd.DataFrame:
+    """Average partial dependence of a boosted model fitted on every scored
+    attempt. Descriptive: the shape learned, not an out-of-sample effect."""
+    from sklearn.inspection import partial_dependence
+
+    cols = E.usable_columns(d, FORECAST)
+    model = hgb(0.5).fit(d[cols], d["y"])
+    rows = []
+    for f in features:
+        if f not in cols:
+            continue
+        res = partial_dependence(model, d[cols], [cols.index(f)], grid_resolution=grid, percentiles=(0.05, 0.95), kind="average")
+        for x, y in zip(res["grid_values"][0], res["average"][0]):
+            rows.append({"feature": f, "value": float(x), "effect": float(y)})
+    return pd.DataFrame(rows)
+
+
+def shuffled_target_check(d: pd.DataFrame, folds: list[E.Fold]) -> dict:
+    """Train the boosted model on permuted residuals. A leak-free pipeline
+    cannot beat the baseline this way."""
+    rng = np.random.default_rng(SEED)
+    errs, base = [], []
+    for f in folds:
+        tr = d.iloc[f.train_idx].copy()
+        tr["y"] = rng.permutation(tr["y"].to_numpy())
+        te = d.iloc[f.test_idx]
+        cols = E.usable_columns(tr, FORECAST)
+        pred = hgb(0.5).fit(tr[cols], tr["y"]).predict(te[cols])
+        errs.append(np.abs(te["pred_s"] * np.exp(pred) - te["moving_s"]))
+        base.append(np.abs(te["pred_s"] - te["moving_s"]))
+    return {"shuffled_mae_s": float(np.concatenate(errs).mean()), "baseline_mae_s": float(np.concatenate(base).mean())}
+
+
+def interval_table(intervals: pd.DataFrame, levels=(0.8, 0.9)) -> pd.DataFrame:
+    """Coverage, median width and the standard error of coverage, per method
+    and level, flat (one row per method and level)."""
+    s = intervals[intervals["nominal"].isin(levels)]
+    out = (
+        s.groupby(["method", "nominal"])
+        .agg(coverage=("inside", "mean"), width_pct=("width_pct", "median"), n=("inside", "size"))
+        .reset_index()
+    )
+    out["coverage_se"] = np.sqrt(out["coverage"] * (1 - out["coverage"]) / out["n"])
+    return out
+
+
+MODEL_COLORS = {
+    "Production physics (no correction)": "#5c6169",
+    "Constant correction (median residual)": "#2f6fa9",
+    "Ridge, forecast-time features": "#128857",
+    "Boosted quantile, forecast-time": "#c45314",
+    "Boosted quantile, monotone": "#9a6510",
+    "Ridge, + in-ride features": "#7fa6cf",
+    "Boosted quantile, + in-ride": "#b4272c",
+}
+METHOD_COLORS = {
+    "sigma (production)": "#5c6169",
+    "conformal": "#2f6fa9",
+    "sigma, conformal": "#c45314",
+    "CQR (boosted)": "#128857",
+}

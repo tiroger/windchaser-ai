@@ -420,3 +420,32 @@ def usable_columns(frame: pd.DataFrame, cols: list[str], min_present: int = 20) 
         if s.notna().sum() >= min_present and s.nunique(dropna=True) > 1:
             keep.append(c)
     return keep
+
+
+def reference_protocol(payload: dict, min_attempts: int = 6, train_fraction: float = 0.7) -> dict:
+    """The README's per-segment backtest (scripts/evaluate_calibration.py,
+    model C) on whatever snapshot is loaded: segments with enough attempts,
+    a time-ordered 70/30 split within each, power fitted on the 70% in real
+    weather with the elevation profile, scored on the 30%."""
+    from cycling_analytics.physics import fit_power_from_efforts
+
+    by: dict[str, list[dict]] = {}
+    for e in payload["efforts"]:
+        if e.get("weather"):
+            by.setdefault(str(e["segment_id"]), []).append(e)
+    actual, pred = [], []
+    for sid, effs in by.items():
+        seg = payload["segments"].get(sid)
+        att = sorted(attempts_only(effs), key=lambda e: e["start_date"])
+        if not seg or len(att) < min_attempts:
+            continue
+        cut = int(len(att) * train_fraction)
+        if len(att) - cut < 3:
+            continue
+        sections = to_sections(seg["points"], seg["average_grade"], seg.get("elevation_profile"))
+        power = fit_power_from_efforts(sections, att[:cut])
+        for e in att[cut:]:
+            w = e["weather"]
+            actual.append(float(e.get("moving_time_s") or e["elapsed_time_s"]))
+            pred.append(ride_time(sections, Rider(power), rho_of(w), w["wind_from_deg"], w["wind_speed_ms"]))
+    return point_metrics(np.array(actual), np.array(pred))
