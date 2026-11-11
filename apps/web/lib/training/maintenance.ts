@@ -94,9 +94,13 @@ export function scheduleStatus(
   });
 }
 
-/** Photos of the bikes, kept from the original app. */
+/**
+ * Photos of the bikes, keyed by Strava gear id. Strava's API does not return
+ * gear photos, so a new bike needs its image added here.
+ */
 export const BIKE_PHOTOS: Record<string, string> = {
   b8099416: "/training/bikes/tcr.jpeg",
+  b15494478: "/training/bikes/madone.jpeg",
   b4073790: "/training/bikes/storck.jpeg",
   b8615449: "/training/bikes/headlands.jpeg",
   b11212849: "/training/bikes/caad13.jpeg",
